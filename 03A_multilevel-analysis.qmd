@@ -1,0 +1,309 @@
+---
+title: "Untitled"
+format: html
+editor: visual
+---
+
+## Library
+
+```{r}
+library(lme4) 
+library(lmerTest)  # For p-values in mixed models
+library(ggplot2)   
+library(sjPlot)    # For model diagnostics and visualization
+library(performance)
+
+```
+
+## Data
+
+```{r}
+# The dataframe iscalled 'df'
+
+df <- read_csv("01_CleanedData/chi_square_df.csv") |>
+  mutate(across(c(Sex, Nationality, Ethnicity, StudyLevel, Major, ParentalEdu, Handedness,
+                  NativeLang, SecondLang, MathLang_Primary, MultLang, SchoolType_Primary,
+                  MathDiff, MultLearning_normal, MultLearning_time, MultLearning_peers,
+                  ReadingProblem, MathAnxiety, ExamAnxiety, MemoryAnxiety, SameLang_pri,     
+                  SameLang_Mult, PastMedDiagnosis),  
+                as.factor))
+
+# Define levels for Major
+df$Major <- factor(df$Major, 
+                   levels = c("Education", "Biomedical Sciences",
+                              "Computer Science/IT", "Others", "Psychology"))
+
+# Define levels for ParentalEdu
+df$ParentalEdu <- factor(df$ParentalEdu, 
+                         levels = c("No", "Yes, mother only", 
+                                    "Yes, father only", "Yes, both parents"))
+
+# Define levels for PastMedDiagnosis
+df$PastMedDiagnosis <- factor(df$PastMedDiagnosis, 
+                              levels = c("No", "Undisclosed", "Yes"))
+
+# Define levels for SameLang_pri and SameLang_Mult
+df$SameLang_pri <- factor(df$SameLang_pri, 
+                          levels = c("Same", "Different"))
+df$SameLang_Mult <- factor(df$SameLang_Mult, 
+                           levels = c("Same", "Different"))
+
+# Define levels for SchoolType_Primary
+df$SchoolType_Primary <- factor(df$SchoolType_Primary, 
+                                levels = c("Public", "Homeschooling", 
+                                           "Private", "Religious", "Vernacular", 
+                                           "Overseas", "Unspecified", "Other"))
+
+# Define levels for MathDiff, MultLearning_normal, MultLearning_time, and MultLearning_peers
+df$MathDiff <- factor(df$MathDiff, 
+                      levels = c("No", "Yes"))
+df$MultLearning_normal <- factor(df$MultLearning_normal, 
+                                 levels = c("No", "Yes"))
+df$MultLearning_time <- factor(df$MultLearning_time, 
+                               levels = c("No", "Yes"))
+df$MultLearning_peers <- factor(df$MultLearning_peers, 
+                                levels = c("No", "Yes"))
+
+# Define levels for ReadingProblem, ExamAnxiety, MemoryAnxiety, and MathAnxiety
+df$ReadingProblem <- factor(df$ReadingProblem, 
+                            levels = c("No", "Yes"))
+df$ExamAnxiety <- factor(df$ExamAnxiety, 
+                         levels = c("No", "Yes"))
+df$MemoryAnxiety <- factor(df$MemoryAnxiety, 
+                           levels = c("No", "Yes"))
+df$MathAnxiety <- factor(df$MathAnxiety, 
+                         levels = c("No", "Yes"))
+
+# Filter the data based on specified conditions
+df <- df %>%
+  mutate(
+    # Recode learning difficulties to NA for any value other than "Yes" or "No"
+    MathDiff = recode(MathDiff, "Yes" = "Yes", "No" = "No", .default = NA_character_),
+    MultLearning_normal = recode(MultLearning_normal, "Yes" = "Yes", "No" = "No", .default = NA_character_),
+    MultLearning_time = recode(MultLearning_time, "Yes" = "Yes", "No" = "No", .default = NA_character_),
+    MultLearning_peers = recode(MultLearning_peers, "Yes" = "Yes", "No" = "No", .default = NA_character_),
+    ReadingProblem = recode(ReadingProblem, "Yes" = "Yes", "No" = "No", .default = NA_character_),
+    MathAnxiety = recode(MathAnxiety, "Yes" = "Yes", "No" = "No", .default = NA_character_),
+    ExamAnxiety = recode(ExamAnxiety, "Yes" = "Yes", "No" = "No", .default = NA_character_),
+    MemoryAnxiety = recode(MemoryAnxiety, "Yes" = "Yes", "No" = "No", .default = NA_character_),
+    
+    # Recode SchoolType_Primary to include only specified types; others coded as "Other"
+    SchoolType_Primary = recode(SchoolType_Primary, 
+                                 Public = "Public", 
+                                 Vernacular = "Vernacular", 
+                                 Private = "Private", 
+                                 Religious = "Religious", 
+                                 Homeschooling = "Homeschooling", 
+                                 .default = "Other")
+  ) %>%
+  filter(
+    !is.na(MathDiff),
+    !is.na(MultLearning_normal),
+    !is.na(MultLearning_time),
+    !is.na(MultLearning_peers),
+    !is.na(ReadingProblem),
+    !is.na(MathAnxiety),
+    !is.na(ExamAnxiety),
+    !is.na(MemoryAnxiety),
+    SchoolType_Primary %in% c("Public", "Vernacular", "Private", "Religious", "Homeschooling")
+  )
+
+# Update Ethnicity, Sex, StudyLevel, Major, and ParentalEdu factor levels
+# Ethnicity: Include only Malay, Chinese, Indian, and Others; set Malay as reference
+df$Ethnicity <- factor(df$Ethnicity, 
+                       levels = c("Malay", "Chinese", "Indian", "Others"))
+
+# Sex: Remove "Others" and set Female as reference
+df$Sex <- factor(df$Sex, 
+                 levels = c("Female", "Male"))
+
+# StudyLevel: Set Freshman as reference
+df$StudyLevel <- df$StudyLevel %>%
+  na_if("Missing") %>%
+  factor(levels = c("Freshman/First Year", "Sophomore/Second Year", 
+                    "Junior/Third Year", "Senior/Fourth Year", 
+                    "Graduate Student"), 
+         labels = c("Freshman", "Sophomore", "Junior", "Senior", "Graduate"))
+
+# Major: Set Education as reference
+df$Major <- factor(df$Major, 
+                   levels = c("Education", "Biomedical Sciences", 
+                              "Computer Science/IT", "Others", "Psychology"))
+
+# ParentalEdu: Set No as reference
+df$ParentalEdu <- factor(df$ParentalEdu, 
+                         levels = c("No", "Yes, mother only", 
+                                    "Yes, father only", "Yes, both parents"))
+
+df$school <- as.factor(df$school)
+df$participant <- as.factor(df$participant)
+
+df$Ethnicity <- factor(df$Ethnicity, 
+                       levels = c("Chinese", "Malay", "Indian", "Others"))
+str(df)
+
+```
+
+## Multilevel analysis (demo, learning experiences, & language)
+
+```{r}
+
+cleaned_df <- df |>
+  select(fluency_score, school, Ethnicity, Major, ParentalEdu, NativeLang, 
+         MultLearning_normal, MultLearning_peers) |>
+  na.omit()
+
+# Fit the multilevel model
+model0 <- lmer(fluency_score ~ (1 | school), data = cleaned_df)
+modela <- lmer(fluency_score ~ Ethnicity + Major + ParentalEdu + NativeLang + (1 | school), data = cleaned_df)
+modelb <- lmer(fluency_score ~Major + ParentalEdu + NativeLang + (1 | school), data = cleaned_df)
+
+# Check the model summary
+summary(model0)
+summary(modela)
+summary(modelb)
+
+
+# Model diagnostics (optional)
+plot(modela)
+#check_model(modela)
+
+# Calculate mean and standard deviation for fluency scores by major
+cleaned_df %>%
+  group_by(Major) %>%
+  summarise(
+    Mean = mean(fluency_score, na.rm = TRUE),
+    SD = sd(fluency_score, na.rm = TRUE)
+  )
+
+anova(model0, modelb)
+
+```
+
+## learning experiences
+
+```{r}
+modelc <- lmer(fluency_score ~ Major + ParentalEdu + NativeLang + MultLearning_normal + MultLearning_peers +
+                 (1 | school), data = cleaned_df)
+
+summary(modelc)
+anova(modelb, modelc)
+
+## Check
+plot(modelc) 
+plot(fitted(modelc), residuals(modelc))
+
+```
+
+# Post hoc 
+
+### Major
+
+```{r}
+
+library(emmeans)
+emmeans(modelc, pairwise ~ Major)
+
+```
+
+### Plot
+
+```{r}
+# Calculate estimated marginal means for Major
+emm_results <- emmeans(modelc, ~ Major)
+
+# Convert to a data frame for easy plotting
+emm_df <- as.data.frame(emm_results)
+
+library(ggplot2)
+
+library(ggplot2)
+
+library(ggplot2)
+
+# Create the plot with distinct colors for each Major and remove the legend
+plot_major <- ggplot(emm_df, aes(x = Major, y = emmean, fill = Major)) +
+    geom_bar(stat = "identity", position = position_dodge(), color = "black") +
+    geom_errorbar(aes(ymin = lower.CL, ymax = upper.CL), width = 0.2, position = position_dodge(0.9)) +
+    labs(title = "Estimated Marginal Means of Fluency Scores by Major",
+         x = "Major",
+         y = "Estimated Marginal Mean Fluency Score") +
+    theme_minimal() +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1),  # Rotate x-axis labels
+          legend.position = "none") +  # Remove legend
+    scale_fill_brewer(palette = "Set3")  # Use a color palette
+
+ggsave("fluency_scores_by_major.png", plot = plot_major, width = 8, height = 6)
+
+```
+
+### Native language
+
+```{r}
+library(emmeans)
+emmeans(modelc, pairwise ~ NativeLang)
+
+```
+
+### parental education
+
+```{r}
+library(emmeans)
+emmeans(modelc, pairwise ~ ParentalEdu)
+
+```
+
+### Plot
+
+```{r}
+# Estimated marginal means for Native Language
+emm_native_lang <- emmeans(modelc, ~ NativeLang)
+
+# Convert to a data frame for easy plotting
+emm_native_lang_df <- as.data.frame(emm_native_lang)
+
+# Create the plot for Native Language
+plot_native_lang <- ggplot(emm_native_lang_df, aes(x = NativeLang, y = emmean, fill = NativeLang)) +
+    geom_bar(stat = "identity", position = position_dodge(), color = "black") +
+    geom_errorbar(aes(ymin = lower.CL, ymax = upper.CL), width = 0.2, position = position_dodge(0.9)) +
+    labs(title = "Estimated Marginal Means of Fluency Scores by Native Language",
+         x = "Native Language",
+         y = "Estimated Marginal Mean Fluency Score") +
+    theme_minimal() +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1),  # Rotate x-axis labels
+          legend.position = "none") +  # Remove legend
+    scale_fill_brewer(palette = "Set3")  # Use a color palette
+
+plot_native_lang
+# Save the plot for Native Language
+ggsave("fluency_scores_by_native_language.png", plot = plot_native_lang, width = 8, height = 6)
+
+```
+
+## parental education
+
+```{r}
+# Estimated marginal means for Parental Education
+emm_parental_edu <- emmeans(modelc, ~ ParentalEdu)
+
+# Convert to a data frame for easy plotting
+emm_parental_edu_df <- as.data.frame(emm_parental_edu)
+
+# Create the plot for Parental Education
+plot_parental_edu <- ggplot(emm_parental_edu_df, aes(x = ParentalEdu, y = emmean, fill = ParentalEdu)) +
+    geom_bar(stat = "identity", position = position_dodge(), color = "black") +
+    geom_errorbar(aes(ymin = lower.CL, ymax = upper.CL), width = 0.2, position = position_dodge(0.9)) +
+    labs(title = "Estimated Marginal Means of Fluency Scores by Parental Education",
+         x = "Parental Education",
+         y = "Estimated Marginal Mean Fluency Score") +
+    theme_minimal() +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1),  # Rotate x-axis labels
+          legend.position = "none") +  # Remove legend
+    scale_fill_brewer(palette = "Set3")  # Use a color palette
+
+plot_parental_edu
+
+# Save the plot for Parental Education
+ggsave("fluency_scores_by_parental_education.png", plot = plot_parental_edu, width = 8, height = 6)
+
+```

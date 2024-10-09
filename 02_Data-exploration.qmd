@@ -1,0 +1,1530 @@
+---
+title: "02_Demographic Statistics"
+format: html
+editor: visual
+---
+
+## Libraries
+
+```{r message=FALSE, warning=FALSE}
+
+#| warning = false
+
+library(tidyverse)
+library(gtsummary)
+library(GGally)
+library(kableExtra)
+library(openxlsx)
+library(Hmisc)
+library(vcd)
+library(correlation)
+library(effectsize)
+library(psych)
+
+options(es.use_symbols = TRUE)
+```
+
+## Import data
+
+```{r}
+
+#| echo: false
+#| show_col_types = false
+
+levels_in_fluency <- c("Low", "Average", "Above Average", "High")
+
+data <- read_csv("01_CleanedData/04_combined-and-filtered_Data_Final.csv", 
+                 show_col_types = FALSE) |>
+  dplyr::filter(!is.na(fluency_score)) |>
+  mutate(fluency_score_quartile = cut(fluency_score, 
+                                      breaks = quantile(fluency_score, probs = 0:4/4, 
+                                                        na.rm = TRUE),
+                                      include.lowest = TRUE,
+                                      labels = c("Low", "Average", "Above Average", "High")))|>
+  select(-starts_with("SecondLang_score"), -starts_with("SecondLang_type"))|>
+  write_csv("01_CleanedData/final_df.csv")
+  
+```
+
+### Multiplication Fluency Distribution
+
+```{r}
+summary_table <- data %>%
+  group_by(fluency_score_quartile) %>%
+  summarise(
+    count = n(),
+    min_fluency = min(fluency_score, na.rm = TRUE),
+    max_fluency = max(fluency_score, na.rm = TRUE)
+  ) %>%
+  arrange(fluency_score_quartile)
+
+summary_table %>%
+  kable() %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"))
+
+```
+
+## How many poor fluency? 
+
+```{r}
+# Calculate the number of participants with a fluency score of 30 or below
+num_below_30 <- sum(data$fluency_score <= 30, na.rm = TRUE)
+
+# Calculate the total number of participants
+total_participants <- nrow(data)
+
+# Calculate the percentage
+percentage_below_30 <- (num_below_30 / total_participants) * 100
+percentage_below_30
+
+
+```
+
+## ANOVA test for fluency level
+
+```{r}
+library(stats)
+
+# Perform ANOVA
+anova_result <- aov(fluency_score ~ fluency_score_quartile, data = data)
+
+# Summary of ANOVA results
+summary(anova_result)
+
+# Post hoc analysis using Tukey HSD test
+tukey_result <- TukeyHSD(anova_result)
+
+# Print Tukey HSD test results
+print(tukey_result)
+
+data %>%
+  group_by(fluency_score_quartile) %>%
+  summarise(
+    mean_fluency = mean(fluency_score, na.rm = TRUE),
+    sd_fluency = sd(fluency_score, na.rm = TRUE)
+  )
+```
+
+### Descriptive Statistics Summary Table
+
+```{r}
+# summarize data
+
+table_summary1 <- data |>
+  select(-participant)|>
+  tbl_summary(
+    by = fluency_score_quartile,
+    statistic = list(
+      all_continuous() ~ "{mean} ({sd})",
+      all_categorical() ~ "{n} / {N} ({p}%)"
+    ),
+    digits = all_continuous() ~ 2,
+    missing_text = "(Missing)"
+  ) |>
+  modify_caption("**Table 1. Participant Characteristics**") 
+
+
+# Convert the summary table to a data frame
+table_df <- as.data.frame(table_summary1)
+
+# Write the data frame to an Excel file
+write.xlsx(table_df, "summary_table.xlsx")
+
+as_gt(table_summary1) |>
+  gt::gtsave(
+    file = "demo_summary_table1.png"
+  )
+
+```
+
+## Fluency Histogram
+
+```{r}
+# Calculate mean and median
+mean_fluency <- mean(data$fluency_score, na.rm = TRUE)
+median_fluency <- median(data$fluency_score, na.rm = TRUE)
+sd_fluency <- sd(data$fluency_score, na.rm = TRUE)
+
+# Create color palette for quartiles
+quartile_colors <- c("Low" = "#E3F6F7", "Average" = "#AEE4E8", "Above Average" = "#A5E2E6", "High" = "#84B4B8")
+
+# Create the histogram for fluency
+fluency_hist <- ggplot(data, aes(x = fluency_score)) +
+  geom_histogram(
+    binwidth = 1, 
+    aes(fill = ifelse(fluency_score < 20, "Below 20", as.character(fluency_score_quartile))), 
+    color = "black"
+  ) +
+  scale_fill_manual(values = c("Below 20" = "#A52A2A", quartile_colors), name = "Fluency Quartiles") +
+  geom_vline(xintercept = median_fluency, color = "blue", linetype = "dashed", size = 1) + # Add median line
+  labs(x = "Fluency Score", y = "Frequency") +
+  theme_bw()+
+  theme(legend.position = "none")
+
+fluency_hist
+```
+
+## Pearson Correlation for continuous variables
+
+```{r}
+
+# Select the continuous variables
+continuous_vars <- c("fluency_score", "Age", "num_Seclanguages", "MultLearning_score")
+
+# Calculate Pearson correlations and p-values
+cor_results <- rcorr(as.matrix(data[continuous_vars]))
+
+# Display the correlation matrix
+print(cor_results$r)
+
+# Display the matrix of p-values
+print(cor_results$P)
+
+```
+
+```{r}
+cor.test(data$fluency_score, data$Age)
+
+t.test(fluency_score ~ Sex, data = data, var.equal = TRUE)
+
+# Calculate the SD 
+sd(data$fluency_score[data$Sex == "Female"])
+sd(data$fluency_score[data$Sex == "Male"])
+
+summary_stats <- data %>%
+  group_by(Sex) %>%
+  summarise(
+    mean_fluency = mean(fluency_score, na.rm = TRUE),
+    sd_fluency = sd(fluency_score, na.rm = TRUE)
+  )
+summary_stats
+
+
+#StudyLevel
+anova_result <- aov(fluency_score ~ StudyLevel, data = data)
+summary(anova_result)
+
+summary_stats <- data %>%
+  group_by(StudyLevel) %>%
+  summarise(
+    mean_fluency = mean(fluency_score, na.rm = TRUE),
+    sd_fluency = sd(fluency_score, na.rm = TRUE)
+  )
+summary_stats
+
+
+TukeyHSD(anova_result)
+
+#pastmeddiagnosis
+subset_data <- subset(data, PastMedDiagnosis %in% c("Yes", "No"))
+t.test(fluency_score ~ PastMedDiagnosis, data = subset_data, var.equal = TRUE)
+sd(data$fluency_score[data$PastMedDiagnosis == "Yes"])
+sd(data$fluency_score[data$PastMedDiagnosis == "No"])
+
+summary_stats <- data %>%
+  group_by(PastMedDiagnosis) %>%
+  summarise(
+    mean_fluency = mean(fluency_score, na.rm = TRUE),
+    sd_fluency = sd(fluency_score, na.rm = TRUE)
+  )
+summary_stats
+```
+
+## Parents Characteristics
+
+```{r}
+anova_result <- aov(fluency_score ~ ParentalEdu, data = data)
+summary(anova_result)
+TukeyHSD(anova_result)
+
+summary_stats <- data %>%
+  group_by(ParentalEdu) %>%
+  summarise(
+    mean_fluency = mean(fluency_score, na.rm = TRUE),
+    sd_fluency = sd(fluency_score, na.rm = TRUE)
+  )
+summary_stats
+```
+
+## Individual, Pedagogical, and Environment
+
+```{r}
+
+anova_result <- aov(fluency_score ~ Major, data = data)
+summary(anova_result)
+TukeyHSD(anova_result)
+
+# Calculate both mean and SD by grouping by a categorical variable (e.g., "Major")
+summary_stats <- data %>%
+  group_by(Major) %>%
+  summarise(
+    mean_fluency = mean(fluency_score, na.rm = TRUE),
+    sd_fluency = sd(fluency_score, na.rm = TRUE)
+  )
+
+# View the result
+print(summary_stats)
+```
+
+### Motivations, anxiety
+
+```{r}
+
+# Filter data
+filtered_data <- data %>%
+  filter(MathDiff %in% c("Yes", "No"),
+         MultLearning_normal %in% c("Yes", "No"),
+         MultLearning_time %in% c("Yes", "No"),
+         MultLearning_peers %in% c("Yes", "No"),
+         ReadingProblem %in% c("Yes", "No"),
+         MathAnxiety %in% c("Yes", "No"),
+         ExamAnxiety %in% c("Yes", "No"),
+         MemoryAnxiety %in% c("Yes", "No"))
+
+t.test(fluency_score ~ MathDiff, data = filtered_data, var.equal = TRUE)
+t.test(fluency_score ~ MultLearning_normal, data = filtered_data, var.equal = TRUE)
+t.test(fluency_score ~ MultLearning_time, data = filtered_data, var.equal = TRUE)
+t.test(fluency_score ~ MultLearning_peers, data = filtered_data, var.equal = TRUE)
+t.test(fluency_score ~ ReadingProblem, data = filtered_data, var.equal = TRUE)
+t.test(fluency_score ~ MathAnxiety, data = filtered_data, var.equal = TRUE)
+t.test(fluency_score ~ ExamAnxiety, data = filtered_data, var.equal = TRUE)
+t.test(fluency_score ~ MemoryAnxiety, data = filtered_data, var.equal = TRUE)
+```
+
+```{r}
+# Calculate means and SDs for MathDiff
+MathDiff_stats <- filtered_data %>%
+  group_by(MathDiff) %>%
+  summarise(mean_fluency = mean(fluency_score, na.rm = TRUE),
+            sd_fluency = sd(fluency_score, na.rm = TRUE))
+
+# Calculate means and SDs for MultLearning_normal
+MultLearning_normal_stats <- filtered_data %>%
+  group_by(MultLearning_normal) %>%
+  summarise(mean_fluency = mean(fluency_score, na.rm = TRUE),
+            sd_fluency = sd(fluency_score, na.rm = TRUE))
+
+# Calculate means and SDs for MultLearning_time
+MultLearning_time_stats <- filtered_data %>%
+  group_by(MultLearning_time) %>%
+  summarise(mean_fluency = mean(fluency_score, na.rm = TRUE),
+            sd_fluency = sd(fluency_score, na.rm = TRUE))
+
+# Calculate means and SDs for MultLearning_peers
+MultLearning_peers_stats <- filtered_data %>%
+  group_by(MultLearning_peers) %>%
+  summarise(mean_fluency = mean(fluency_score, na.rm = TRUE),
+            sd_fluency = sd(fluency_score, na.rm = TRUE))
+
+# Calculate means and SDs for ReadingProblem
+ReadingProblem_stats <- filtered_data %>%
+  group_by(ReadingProblem) %>%
+  summarise(mean_fluency = mean(fluency_score, na.rm = TRUE),
+            sd_fluency = sd(fluency_score, na.rm = TRUE))
+
+# Calculate means and SDs for MathAnxiety
+MathAnxiety_stats <- filtered_data %>%
+  group_by(MathAnxiety) %>%
+  summarise(mean_fluency = mean(fluency_score, na.rm = TRUE),
+            sd_fluency = sd(fluency_score, na.rm = TRUE))
+
+# Calculate means and SDs for ExamAnxiety
+ExamAnxiety_stats <- filtered_data %>%
+  group_by(ExamAnxiety) %>%
+  summarise(mean_fluency = mean(fluency_score, na.rm = TRUE),
+            sd_fluency = sd(fluency_score, na.rm = TRUE))
+
+# Calculate means and SDs for MemoryAnxiety
+MemoryAnxiety_stats <- filtered_data %>%
+  group_by(MemoryAnxiety) %>%
+  summarise(mean_fluency = mean(fluency_score, na.rm = TRUE),
+            sd_fluency = sd(fluency_score, na.rm = TRUE))
+
+# Display all the results
+MathDiff_stats
+MultLearning_normal_stats
+MultLearning_time_stats
+MultLearning_peers_stats
+ReadingProblem_stats
+MathAnxiety_stats
+ExamAnxiety_stats
+MemoryAnxiety_stats
+
+
+
+```
+
+```{r}
+# Function to calculate pooled SD and Cohen's d
+calculate_cohens_d <- function(mean1, mean2, sd1, sd2, n1, n2) {
+  pooled_sd <- sqrt(((n1 - 1) * sd1^2 + (n2 - 1) * sd2^2) / (n1 + n2 - 2))
+  cohen_d <- (mean1 - mean2) / pooled_sd
+  return(cohen_d)
+}
+
+# For each predictor, retrieve means, SDs, and ns, then calculate Cohen's d
+
+# Example for MathDiff
+MathDiff_stats <- filtered_data %>%
+  group_by(MathDiff) %>%
+  summarise(
+    mean_fluency = mean(fluency_score, na.rm = TRUE),
+    sd_fluency = sd(fluency_score, na.rm = TRUE),
+    n = n()
+  )
+mean_no_mathdiff <- MathDiff_stats$mean_fluency[MathDiff_stats$MathDiff == "No"]
+mean_yes_mathdiff <- MathDiff_stats$mean_fluency[MathDiff_stats$MathDiff == "Yes"]
+sd_no_mathdiff <- MathDiff_stats$sd_fluency[MathDiff_stats$MathDiff == "No"]
+sd_yes_mathdiff <- MathDiff_stats$sd_fluency[MathDiff_stats$MathDiff == "Yes"]
+n_no_mathdiff <- MathDiff_stats$n[MathDiff_stats$MathDiff == "No"]
+n_yes_mathdiff <- MathDiff_stats$n[MathDiff_stats$MathDiff == "Yes"]
+
+# Calculate Cohen's d for MathDiff
+cohen_d_mathdiff <- calculate_cohens_d(mean_no_mathdiff, mean_yes_mathdiff, sd_no_mathdiff, sd_yes_mathdiff, n_no_mathdiff, n_yes_mathdiff)
+print(paste("Cohen's d for MathDiff:", cohen_d_mathdiff))
+
+
+# For MultLearning_normal
+MultLearning_normal_stats <- filtered_data %>%
+  group_by(MultLearning_normal) %>%
+  summarise(
+    mean_fluency = mean(fluency_score, na.rm = TRUE),
+    sd_fluency = sd(fluency_score, na.rm = TRUE),
+    n = n()
+  )
+mean_no_multlearning_normal <- MultLearning_normal_stats$mean_fluency[MultLearning_normal_stats$MultLearning_normal == "No"]
+mean_yes_multlearning_normal <- MultLearning_normal_stats$mean_fluency[MultLearning_normal_stats$MultLearning_normal == "Yes"]
+sd_no_multlearning_normal <- MultLearning_normal_stats$sd_fluency[MultLearning_normal_stats$MultLearning_normal == "No"]
+sd_yes_multlearning_normal <- MultLearning_normal_stats$sd_fluency[MultLearning_normal_stats$MultLearning_normal == "Yes"]
+n_no_multlearning_normal <- MultLearning_normal_stats$n[MultLearning_normal_stats$MultLearning_normal == "No"]
+n_yes_multlearning_normal <- MultLearning_normal_stats$n[MultLearning_normal_stats$MultLearning_normal == "Yes"]
+
+# Calculate Cohen's d for MultLearning_normal
+cohen_d_multlearning_normal <- calculate_cohens_d(mean_no_multlearning_normal, mean_yes_multlearning_normal, sd_no_multlearning_normal, sd_yes_multlearning_normal, n_no_multlearning_normal, n_yes_multlearning_normal)
+print(paste("Cohen's d for MultLearning_normal:", cohen_d_multlearning_normal))
+
+
+# For MultLearning_time
+MultLearning_time_stats <- filtered_data %>%
+  group_by(MultLearning_time) %>%
+  summarise(
+    mean_fluency = mean(fluency_score, na.rm = TRUE),
+    sd_fluency = sd(fluency_score, na.rm = TRUE),
+    n = n()
+  )
+mean_no_multlearning_time <- MultLearning_time_stats$mean_fluency[MultLearning_time_stats$MultLearning_time == "No"]
+mean_yes_multlearning_time <- MultLearning_time_stats$mean_fluency[MultLearning_time_stats$MultLearning_time == "Yes"]
+sd_no_multlearning_time <- MultLearning_time_stats$sd_fluency[MultLearning_time_stats$MultLearning_time == "No"]
+sd_yes_multlearning_time <- MultLearning_time_stats$sd_fluency[MultLearning_time_stats$MultLearning_time == "Yes"]
+n_no_multlearning_time <- MultLearning_time_stats$n[MultLearning_time_stats$MultLearning_time == "No"]
+n_yes_multlearning_time <- MultLearning_time_stats$n[MultLearning_time_stats$MultLearning_time == "Yes"]
+
+# Calculate Cohen's d for MultLearning_time
+cohen_d_multlearning_time <- calculate_cohens_d(mean_no_multlearning_time, mean_yes_multlearning_time, sd_no_multlearning_time, sd_yes_multlearning_time, n_no_multlearning_time, n_yes_multlearning_time)
+print(paste("Cohen's d for MultLearning_time:", cohen_d_multlearning_time))
+
+
+# For MultLearning_peers
+MultLearning_peers_stats <- filtered_data %>%
+  group_by(MultLearning_peers) %>%
+  summarise(
+    mean_fluency = mean(fluency_score, na.rm = TRUE),
+    sd_fluency = sd(fluency_score, na.rm = TRUE),
+    n = n()
+  )
+mean_no_multlearning_peers <- MultLearning_peers_stats$mean_fluency[MultLearning_peers_stats$MultLearning_peers == "No"]
+mean_yes_multlearning_peers <- MultLearning_peers_stats$mean_fluency[MultLearning_peers_stats$MultLearning_peers == "Yes"]
+sd_no_multlearning_peers <- MultLearning_peers_stats$sd_fluency[MultLearning_peers_stats$MultLearning_peers == "No"]
+sd_yes_multlearning_peers <- MultLearning_peers_stats$sd_fluency[MultLearning_peers_stats$MultLearning_peers == "Yes"]
+n_no_multlearning_peers <- MultLearning_peers_stats$n[MultLearning_peers_stats$MultLearning_peers == "No"]
+n_yes_multlearning_peers <- MultLearning_peers_stats$n[MultLearning_peers_stats$MultLearning_peers == "Yes"]
+
+# Calculate Cohen's d for MultLearning_peers
+cohen_d_multlearning_peers <- calculate_cohens_d(mean_no_multlearning_peers, mean_yes_multlearning_peers, sd_no_multlearning_peers, sd_yes_multlearning_peers, n_no_multlearning_peers, n_yes_multlearning_peers)
+print(paste("Cohen's d for MultLearning_peers:", cohen_d_multlearning_peers))
+
+
+# Repeat the same process for ReadingProblem, MathAnxiety, ExamAnxiety, and MemoryAnxiety
+
+
+```
+
+```{r}
+# Function to calculate pooled SD and Cohen's d
+calculate_cohens_d <- function(mean1, mean2, sd1, sd2, n1, n2) {
+  pooled_sd <- sqrt(((n1 - 1) * sd1^2 + (n2 - 1) * sd2^2) / (n1 + n2 - 2))
+  cohen_d <- (mean1 - mean2) / pooled_sd
+  return(cohen_d)
+}
+
+# For ReadingProblem
+ReadingProblem_stats <- filtered_data %>%
+  group_by(ReadingProblem) %>%
+  summarise(
+    mean_fluency = mean(fluency_score, na.rm = TRUE),
+    sd_fluency = sd(fluency_score, na.rm = TRUE),
+    n = n()
+  )
+mean_no_readingproblem <- ReadingProblem_stats$mean_fluency[ReadingProblem_stats$ReadingProblem == "No"]
+mean_yes_readingproblem <- ReadingProblem_stats$mean_fluency[ReadingProblem_stats$ReadingProblem == "Yes"]
+sd_no_readingproblem <- ReadingProblem_stats$sd_fluency[ReadingProblem_stats$ReadingProblem == "No"]
+sd_yes_readingproblem <- ReadingProblem_stats$sd_fluency[ReadingProblem_stats$ReadingProblem == "Yes"]
+n_no_readingproblem <- ReadingProblem_stats$n[ReadingProblem_stats$ReadingProblem == "No"]
+n_yes_readingproblem <- ReadingProblem_stats$n[ReadingProblem_stats$ReadingProblem == "Yes"]
+
+# Calculate Cohen's d for ReadingProblem
+cohen_d_readingproblem <- calculate_cohens_d(mean_no_readingproblem, mean_yes_readingproblem, sd_no_readingproblem, sd_yes_readingproblem, n_no_readingproblem, n_yes_readingproblem)
+print(paste("Cohen's d for ReadingProblem:", cohen_d_readingproblem))
+
+
+# For MathAnxiety
+MathAnxiety_stats <- filtered_data %>%
+  group_by(MathAnxiety) %>%
+  summarise(
+    mean_fluency = mean(fluency_score, na.rm = TRUE),
+    sd_fluency = sd(fluency_score, na.rm = TRUE),
+    n = n()
+  )
+mean_no_mathanxiety <- MathAnxiety_stats$mean_fluency[MathAnxiety_stats$MathAnxiety == "No"]
+mean_yes_mathanxiety <- MathAnxiety_stats$mean_fluency[MathAnxiety_stats$MathAnxiety == "Yes"]
+sd_no_mathanxiety <- MathAnxiety_stats$sd_fluency[MathAnxiety_stats$MathAnxiety == "No"]
+sd_yes_mathanxiety <- MathAnxiety_stats$sd_fluency[MathAnxiety_stats$MathAnxiety == "Yes"]
+n_no_mathanxiety <- MathAnxiety_stats$n[MathAnxiety_stats$MathAnxiety == "No"]
+n_yes_mathanxiety <- MathAnxiety_stats$n[MathAnxiety_stats$MathAnxiety == "Yes"]
+
+# Calculate Cohen's d for MathAnxiety
+cohen_d_mathanxiety <- calculate_cohens_d(mean_no_mathanxiety, mean_yes_mathanxiety, sd_no_mathanxiety, sd_yes_mathanxiety, n_no_mathanxiety, n_yes_mathanxiety)
+print(paste("Cohen's d for MathAnxiety:", cohen_d_mathanxiety))
+
+
+# For ExamAnxiety
+ExamAnxiety_stats <- filtered_data %>%
+  group_by(ExamAnxiety) %>%
+  summarise(
+    mean_fluency = mean(fluency_score, na.rm = TRUE),
+    sd_fluency = sd(fluency_score, na.rm = TRUE),
+    n = n()
+  )
+mean_no_examanxiety <- ExamAnxiety_stats$mean_fluency[ExamAnxiety_stats$ExamAnxiety == "No"]
+mean_yes_examanxiety <- ExamAnxiety_stats$mean_fluency[ExamAnxiety_stats$ExamAnxiety == "Yes"]
+sd_no_examanxiety <- ExamAnxiety_stats$sd_fluency[ExamAnxiety_stats$ExamAnxiety == "No"]
+sd_yes_examanxiety <- ExamAnxiety_stats$sd_fluency[ExamAnxiety_stats$ExamAnxiety == "Yes"]
+n_no_examanxiety <- ExamAnxiety_stats$n[ExamAnxiety_stats$ExamAnxiety == "No"]
+n_yes_examanxiety <- ExamAnxiety_stats$n[ExamAnxiety_stats$ExamAnxiety == "Yes"]
+
+# Calculate Cohen's d for ExamAnxiety
+cohen_d_examanxiety <- calculate_cohens_d(mean_no_examanxiety, mean_yes_examanxiety, sd_no_examanxiety, sd_yes_examanxiety, n_no_examanxiety, n_yes_examanxiety)
+print(paste("Cohen's d for ExamAnxiety:", cohen_d_examanxiety))
+
+
+# For MemoryAnxiety
+MemoryAnxiety_stats <- filtered_data %>%
+  group_by(MemoryAnxiety) %>%
+  summarise(
+    mean_fluency = mean(fluency_score, na.rm = TRUE),
+    sd_fluency = sd(fluency_score, na.rm = TRUE),
+    n = n()
+  )
+mean_no_memoryanxiety <- MemoryAnxiety_stats$mean_fluency[MemoryAnxiety_stats$MemoryAnxiety == "No"]
+mean_yes_memoryanxiety <- MemoryAnxiety_stats$mean_fluency[MemoryAnxiety_stats$MemoryAnxiety == "Yes"]
+sd_no_memoryanxiety <- MemoryAnxiety_stats$sd_fluency[MemoryAnxiety_stats$MemoryAnxiety == "No"]
+sd_yes_memoryanxiety <- MemoryAnxiety_stats$sd_fluency[MemoryAnxiety_stats$MemoryAnxiety == "Yes"]
+n_no_memoryanxiety <- MemoryAnxiety_stats$n[MemoryAnxiety_stats$MemoryAnxiety == "No"]
+n_yes_memoryanxiety <- MemoryAnxiety_stats$n[MemoryAnxiety_stats$MemoryAnxiety == "Yes"]
+
+# Calculate Cohen's d for MemoryAnxiety
+cohen_d_memoryanxiety <- calculate_cohens_d(mean_no_memoryanxiety, mean_yes_memoryanxiety, sd_no_memoryanxiety, sd_yes_memoryanxiety, n_no_memoryanxiety, n_yes_memoryanxiety)
+print(paste("Cohen's d for MemoryAnxiety:", cohen_d_memoryanxiety))
+
+```
+
+table
+
+```{r}
+# Load necessary library
+library(dplyr)
+
+# Function to calculate n (%) for Yes/No
+calculate_n_percent <- function(data, column) {
+  data %>%
+    group_by(!!sym(column)) %>%
+    summarise(
+      n = n(),
+      percent = n() / sum(n()) * 100
+    ) %>%
+    mutate(percent = paste0(n, " (", round(percent, 2), "%)")) %>%
+    select(!!sym(column), percent)
+}
+
+# Apply the function to each question
+math_diff_table <- calculate_n_percent(filtered_data, "MathDiff")
+multlearning_normal_table <- calculate_n_percent(filtered_data, "MultLearning_normal")
+multlearning_time_table <- calculate_n_percent(filtered_data, "MultLearning_time")
+multlearning_peers_table <- calculate_n_percent(filtered_data, "MultLearning_peers")
+reading_problem_table <- calculate_n_percent(filtered_data, "ReadingProblem")
+math_anxiety_table <- calculate_n_percent(filtered_data, "MathAnxiety")
+exam_anxiety_table <- calculate_n_percent(filtered_data, "ExamAnxiety")
+memory_anxiety_table <- calculate_n_percent(filtered_data, "MemoryAnxiety")
+
+# Merge the results into a single table
+result_table <- data.frame(
+  Question = c(
+    "Have you ever experienced any difficulties learning mathematics in school?",
+    "Do you consider the process of learning the multiplication table normal in your case?",
+    "Compared to your same-age peers, do you think you spent more time learning the multiplication table?",
+    "Do you think your same-age peers know/master the multiplication table better than you?",
+    "Have you ever had any reading problems (e.g., dyslexia)?",
+    "Have you ever felt anxious when learning mathematics?",
+    "Have you ever felt anxious during examinations?",
+    "Do you consider yourself to spend more time memorizing information compared to others?"
+  ),
+  Yes = c(
+    math_diff_table$percent[math_diff_table$MathDiff == "Yes"],
+    multlearning_normal_table$percent[multlearning_normal_table$MultLearning_normal == "Yes"],
+    multlearning_time_table$percent[multlearning_time_table$MultLearning_time == "Yes"],
+    multlearning_peers_table$percent[multlearning_peers_table$MultLearning_peers == "Yes"],
+    reading_problem_table$percent[reading_problem_table$ReadingProblem == "Yes"],
+    math_anxiety_table$percent[math_anxiety_table$MathAnxiety == "Yes"],
+    exam_anxiety_table$percent[exam_anxiety_table$ExamAnxiety == "Yes"],
+    memory_anxiety_table$percent[memory_anxiety_table$MemoryAnxiety == "Yes"]
+  ),
+  No = c(
+    math_diff_table$percent[math_diff_table$MathDiff == "No"],
+    multlearning_normal_table$percent[multlearning_normal_table$MultLearning_normal == "No"],
+    multlearning_time_table$percent[multlearning_time_table$MultLearning_time == "No"],
+    multlearning_peers_table$percent[multlearning_peers_table$MultLearning_peers == "No"],
+    reading_problem_table$percent[reading_problem_table$ReadingProblem == "No"],
+    math_anxiety_table$percent[math_anxiety_table$MathAnxiety == "No"],
+    exam_anxiety_table$percent[exam_anxiety_table$ExamAnxiety == "No"],
+    memory_anxiety_table$percent[memory_anxiety_table$MemoryAnxiety == "No"]
+  )
+)
+
+# Print the table
+print(result_table)
+
+```
+
+## Languages aspect
+
+### Number of second languages
+
+```{r}
+cor.test(data$fluency_score, data$num_Seclanguages)
+
+mean(data$num_Seclanguages, na.rm = TRUE)
+
+sd(data$num_Seclanguages, na.rm = TRUE)
+
+```
+
+### SameLang_pri (use the same languages for math instructions in primary schools)
+
+```{r}
+
+t.test(fluency_score ~ SameLang_pri, data = data, var.equal = TRUE)
+
+data %>%
+  group_by(SameLang_pri) %>%
+  summarise(mean_fluency = mean(fluency_score, na.rm = TRUE),
+            sd_fluency = sd(fluency_score, na.rm = TRUE))
+
+t_test_result <- t.test(fluency_score ~ SameLang_pri, data = data, var.equal = TRUE)
+
+# Calculate Cohen's d
+cohen_d_result <- t_to_d(t = t_test_result$statistic, df = t_test_result$parameter)
+cohen_d_result
+```
+
+```{r}
+#math languages for primary education
+anova_result <- aov(fluency_score ~ MathLang_Primary, data = data)
+summary(anova_result)
+TukeyHSD(anova_result)
+
+data %>%
+  group_by(MathLang_Primary) %>%
+  summarise(mean_fluency = mean(fluency_score, na.rm = TRUE),
+            sd_fluency = sd(fluency_score, na.rm = TRUE))
+
+# Run ANOVA
+anova_result <- aov(fluency_score ~ MathLang_Primary, data = data)
+# Summary of ANOVA result
+summary(anova_result)
+
+# Calculate eta-squared (effect size)
+eta_squared_result <- eta_squared(anova_result)
+
+# Print the effect size
+print(eta_squared_result)
+```
+
+\
+
+### Same language for multiplication
+
+```{r}
+t.test(fluency_score ~ SameLang_Mult, data = data, var.equal = TRUE)
+
+data %>%
+  group_by(SameLang_Mult) %>%
+  summarise(mean_fluency = mean(fluency_score, na.rm = TRUE),
+            sd_fluency = sd(fluency_score, na.rm = TRUE))
+
+t_test_result <- t.test(fluency_score ~ SameLang_Mult, data = data, var.equal = TRUE)
+
+# Calculate Cohen's d
+cohen_d_result <- t_to_d(t = t_test_result$statistic, df = t_test_result$parameter)
+cohen_d_result
+```
+
+### mult lang for memorizing
+
+```{r}
+#math languages for primary education
+anova_result <- aov(fluency_score ~ MultLang, data = data)
+summary(anova_result)
+TukeyHSD(anova_result)
+
+data %>%
+  group_by(MultLang) %>%
+  summarise(
+    mean_fluency = mean(fluency_score, na.rm = TRUE),
+    sd_fluency = sd(fluency_score, na.rm = TRUE)
+  )
+
+```
+
+### Type of native language
+
+```{r}
+
+#math languages for primary education
+anova_result <- aov(fluency_score ~ NativeLang, data = data)
+summary(anova_result)
+TukeyHSD(anova_result)
+
+data %>%
+  group_by(NativeLang) %>%
+  summarise(
+    mean_fluency = mean(fluency_score, na.rm = TRUE),
+    sd_fluency = sd(fluency_score, na.rm = TRUE)
+  )
+
+# Run ANOVA
+anova_result <- aov(fluency_score ~ NativeLang, data = data)
+
+# Summary of ANOVA result
+summary(anova_result)
+
+# Calculate eta-squared (effect size)
+eta_squared_result <- eta_squared(anova_result)
+
+# Print the effect size
+print(eta_squared_result)
+```
+
+## Self-rating
+
+```{r}
+cor.test(data$fluency_score, data$MultLearning_score)
+
+mean(data$MultLearning_score, na.rm = TRUE)
+
+sd(data$MultLearning_score, na.rm = TRUE)
+
+
+```
+
+### Comparing Self-Rating Across Fluency Quartiles
+
+```{r}
+aov_self_rating <- aov(MultLearning_score ~ fluency_score_quartile, data = data)
+summary(aov_self_rating)
+TukeyHSD(aov_self_rating)
+
+```
+
+### Comparison of Means
+
+```{r}
+aggregate(MultLearning_score ~ fluency_score_quartile, data = data, mean)
+aggregate(MultLearning_score ~ fluency_score_quartile, data = data, sd)
+
+```
+
+## Point-Biserial Correlation for Binary Categorical Variables
+
+```{r}
+
+# List of binary categorical variables
+binary_vars <- c("Sex", "SecondLang", "SameLang_pri", 
+                 "SameLang_Mult", "PastMedDiagnosis", 
+                 "MathDiff", "MultLearning_normal", 
+                 "MultLearning_time", "MultLearning_peers", 
+                 "ReadingProblem", "MathAnxiety", "ExamAnxiety", 
+                 "MemoryAnxiety")
+
+# Recode binary variables: "No" as 0, "Yes" as 1
+data_biserial <- data %>%
+  mutate(across(all_of(binary_vars), ~ case_when(
+    . == "No" ~ 0,
+    . == "Yes" ~ 1,
+    . == "Male" ~ 0,  # For 'Sex' variable
+    . == "Female" ~ 1,  # For 'Sex' variable
+    . == "Same" ~ 1,
+    . == "Different" ~ 0,
+    TRUE ~ NA_real_  # Keeps the missing values as NA
+  )))
+  
+
+# Run point-biserial correlations for each binary variable
+for (var in binary_vars) {
+  cor_result <- rcorr(as.numeric(data_biserial[[var]]), data_biserial$fluency_score, type = "pearson")
+  print(paste("Point-Biserial Correlation between fluency_score and", var))
+  print(cor_result$r)  # Correlation coefficient
+  print(cor_result$P)  # P-value
+}
+
+```
+
+## Chi-Square Tests for Associations Between Categorical Variables
+
+### Data imputation function - KNN
+
+```{r}
+mode_impute <- function(x) {
+  ux <- unique(x)
+  ux[which.max(tabulate(match(x, ux)))]
+}
+
+# data_chi <- data 
+
+# I don't think KNN works well for this dataset!
+#data_chi$Ethnicity[is.na(data_chi$Ethnicity)] <- mode_impute(data_chi$Ethnicity)
+
+```
+
+The chi-square test assumes that the expected frequency for each cell should be at least 5. Before running the analysis, we have to collapse some categories to ensure that each has enough observations.
+
+```{r}
+
+# List of categorical variables to test against fluency score
+categorical_vars <- c("Ethnicity", "StudyLevel", "Major", 
+                      "ParentalEdu", "NativeLang", 
+                      "MathLang_Primary", 
+                      "MultLang", 
+                      "SameLang_Mult", "SameLang_pri")
+
+data_chi <- data |>
+  mutate(Ethnicity = case_when(
+    Ethnicity == "Chinese" ~ "Chinese",
+    Ethnicity == "Malay" ~ "Malay",
+    Ethnicity == "Indian" ~ "Indian",
+    TRUE ~ "Others"  # Any other category will be labeled as "Others"
+  ))|>
+  mutate(StudyLevel = case_when(
+    is.na(StudyLevel) ~  "Missing",
+    TRUE ~ StudyLevel)) |>
+  mutate(Major = case_when(
+    Major == "Psychology" ~ "Psychology",
+    Major == "Education" ~ "Education",
+    Major == "Biomedical Sciences" ~ "Biomedical Sciences",
+    Major == "Computer Science/IT" ~ "Computer Science/IT",
+    is.na(Major) ~ "Missing",  # Handle NA values
+    TRUE ~ "Others"  # Collapse any other categories into "Others"
+  )) |>
+    mutate(ParentalEdu = case_when(
+    is.na(ParentalEdu) ~  "Missing",
+    TRUE ~ ParentalEdu)) |>
+  mutate(NativeLang = case_when(
+    NativeLang == "Chinese" ~ "Chinese",
+    NativeLang == "English" ~ "English",
+    NativeLang == "Malay" ~ "Malay",
+    NativeLang == "Msia Indian Languages" ~ "Msia Indian Languages",
+    TRUE ~ "Others"  # Collapse "Other Asian Languages" and any other categories into "Others"
+  ))|>
+    mutate(
+    MathLang_Primary = case_when(
+      MathLang_Primary == "Chinese" ~ "Chinese",
+      MathLang_Primary == "Malay" ~ "Malay",
+      MathLang_Primary == "English" ~ "English",
+      MathLang_Primary == "Tamil" ~ "Tamil",
+      TRUE ~ "Others"  # Collapse any other categories into "Others"
+    ),
+    MultLang = case_when(
+      MultLang == "Chinese" ~ "Chinese",
+      MultLang == "Malay" ~ "Malay",
+      MultLang == "English" ~ "English",
+      MultLang == "Tamil" ~ "Tamil",
+      TRUE ~ "Others"  # Collapse any other categories into "Others"
+    ))|>
+  write_csv("01_CleanedData/chi_square_df.csv")
+  
+
+
+```
+
+### Examine the Results
+
+After running the correlation and chi-square analyses:
+
+-   **Continuous Variables**: Look for significant correlations with `fluency_score`.
+
+-   **Binary Categorical Variables**: Identify significant point-biserial correlations.
+
+-   **Categorical Variables**: Review chi-square results to see if there's a significant association with fluency.
+
+### Chi-square for Ethnicity
+
+```{r}
+# Filter data to include only Chinese, Malay, and Indian
+data_filtered <- data_chi %>%
+  filter(Ethnicity %in% c("Chinese", "Malay", "Indian"))
+
+# Specify the categorical variable to analyze
+var <- "Ethnicity"
+
+# Create the contingency table
+contingency_table <- table(data_filtered[[var]], data_filtered$fluency_score_quartile)
+
+# Perform chi-square test
+chi_result <- chisq.test(contingency_table)
+
+# Print chi-square results
+print(paste("Chi-Square Test between fluency_categorical and", var))
+print(chi_result)
+
+# Calculate residuals and adjusted residuals
+residuals <- chi_result$observed - chi_result$expected
+adjusted_residuals <- residuals / sqrt(chi_result$expected)
+
+# Print residuals and adjusted residuals
+print("Residuals:")
+print(residuals)
+print("Adjusted Residuals:")
+print(adjusted_residuals)
+
+calculate_pvalue <- function(z) {
+  2 * (1 - pnorm(abs(z)))
+}
+
+p_values <- apply(adjusted_residuals, c(1,2), calculate_pvalue)
+
+print("P-values:")
+print(p_values)
+
+# Bonferroni correction
+n_tests <- nrow(contingency_table) * ncol(contingency_table)
+alpha_adjusted <- 0.05 / n_tests
+
+print(paste("Bonferroni-corrected significance threshold:", alpha_adjusted))
+
+# Identify significant results after Bonferroni correction
+significant_results <- which(p_values < alpha_adjusted, arr.ind = TRUE)
+
+print("Significant results after Bonferroni correction:")
+for(i in 1:nrow(significant_results)) {
+  row <- significant_results[i, 1]
+  col <- significant_results[i, 2]
+  print(paste("Row:", rownames(p_values)[row], 
+              "Column:", colnames(p_values)[col], 
+              "Adjusted Residual:", adjusted_residuals[row, col], 
+              "P-value:", p_values[row, col]))
+}
+
+# Calculate Cramér's V
+cramer_v <- assocstats(contingency_table)$cramer
+print(paste("Cramér's V:", cramer_v))
+
+
+```
+
+Chinese students tend to be less represented in the low fluency category, while Malay students are overrepresented in the low category and underrepresented in the high category. These patterns remained significant even after applying the conservative Bonferroni correction, indicating robust associations.
+
+### Chi-square for Major
+
+```{r}
+
+# Filter data to include only major with more than 5 observations
+data_filtered <- data_chi %>%
+  filter(Major %in% c("Psychology", "Education", 
+                           "Biomedical Sciences", "Computer Science/IT"))
+
+# Specify the categorical variable to analyze
+var <- "Major"
+
+# Create the contingency table
+contingency_table <- table(data_filtered[[var]], data_filtered$fluency_score_quartile)
+
+# Perform chi-square test
+chi_result <- chisq.test(contingency_table)
+
+# Print chi-square results
+print(paste("Chi-Square Test between fluency_categorical and", var))
+print(chi_result)
+
+# Calculate residuals and adjusted residuals
+residuals <- chi_result$observed - chi_result$expected
+adjusted_residuals <- residuals / sqrt(chi_result$expected)
+
+# Print residuals and adjusted residuals
+print("Residuals:")
+print(residuals)
+print("Adjusted Residuals:")
+print(adjusted_residuals)
+
+calculate_pvalue <- function(z) {
+  2 * (1 - pnorm(abs(z)))
+}
+
+p_values <- apply(adjusted_residuals, c(1,2), calculate_pvalue)
+
+print("P-values:")
+print(p_values)
+
+# Bonferroni correction
+n_tests <- nrow(contingency_table) * ncol(contingency_table)
+alpha_adjusted <- 0.05 / n_tests
+
+print(paste("Bonferroni-corrected significance threshold:", alpha_adjusted))
+
+# Identify significant results after Bonferroni correction
+significant_results <- which(p_values < alpha_adjusted, arr.ind = TRUE)
+
+print("Significant results after Bonferroni correction:")
+for(i in 1:nrow(significant_results)) {
+  row <- significant_results[i, 1]
+  col <- significant_results[i, 2]
+  print(paste("Row:", rownames(p_values)[row], 
+              "Column:", colnames(p_values)[col], 
+              "Adjusted Residual:", adjusted_residuals[row, col], 
+              "P-value:", p_values[row, col]))
+}
+
+# Calculate Cramér's V
+cramer_v <- assocstats(contingency_table)$cramer
+print(paste("Cramér's V:", cramer_v))
+
+```
+
+These results indicate significant differences in the distribution of multiplication fluency categories among different academic majors. Biomedical Sciences students tend to be less represented in the low fluency category, while Education students are overrepresented in this category. Computer Science/IT students are overrepresented in the high fluency category. These patterns remained significant even after applying the conservative Bonferroni correction, indicating robust associations.
+
+### Chi-square for Parents' Education
+
+```{r}
+
+# Filter data to remove na
+data_filtered <- data_chi |>
+    filter(!is.na(ParentalEdu) & 
+           !is.na(fluency_score_quartile) & 
+           ParentalEdu %in% c("No", "Yes, both parents", 
+                              "Yes, father only", "Yes, mother only") &
+           fluency_score_quartile != "Missing")
+
+# Specify the categorical variable to analyze
+var <- "ParentalEdu"
+
+# Create the contingency table
+contingency_table <- table(data_filtered[[var]], data_filtered$fluency_score_quartile)
+
+# Perform chi-square test
+chi_result <- chisq.test(contingency_table)
+
+# Print chi-square results
+print(paste("Chi-Square Test between fluency_categorical and", var))
+print(chi_result)
+
+# Calculate residuals and adjusted residuals
+residuals <- chi_result$observed - chi_result$expected
+adjusted_residuals <- residuals / sqrt(chi_result$expected)
+
+# Print residuals and adjusted residuals
+print("Residuals:")
+print(residuals)
+print("Adjusted Residuals:")
+print(adjusted_residuals)
+
+calculate_pvalue <- function(z) {
+  2 * (1 - pnorm(abs(z)))
+}
+
+p_values <- apply(adjusted_residuals, c(1,2), calculate_pvalue)
+
+print("P-values:")
+print(p_values)
+
+# Calculate Cramér's V
+cramer_v <- assocstats(contingency_table)$cramer
+print(paste("Cramér's V:", cramer_v))
+
+# Bonferroni correction
+n_tests <- nrow(contingency_table) * ncol(contingency_table)
+alpha_adjusted <- 0.05 / n_tests
+
+print(paste("Bonferroni-corrected significance threshold:", alpha_adjusted))
+
+# Identify significant results after Bonferroni correction
+significant_results <- which(p_values < alpha_adjusted, arr.ind = TRUE)
+
+print("Significant results after Bonferroni correction:")
+for(i in 1:nrow(significant_results)) {
+  row <- significant_results[i, 1]
+  col <- significant_results[i, 2]
+  print(paste("Row:", rownames(p_values)[row], 
+              "Column:", colnames(p_values)[col], 
+              "Adjusted Residual:", adjusted_residuals[row, col], 
+              "P-value:", p_values[row, col]))
+}
+
+
+```
+
+### Chi-square for native language
+
+```{r}
+
+# Filter data to remove na
+data_filtered <- data_chi |>
+    filter(!is.na(NativeLang) & 
+           !is.na(fluency_score_quartile) & 
+           NativeLang %in% c("Malay", "Chinese", "English", "Msia Indian Languages", "Others") &
+           fluency_score_quartile != "Missing")
+
+# Specify the categorical variable to analyze
+var <- "NativeLang"
+
+# Create the contingency table
+contingency_table <- table(data_filtered[[var]], data_filtered$fluency_score_quartile)
+
+# Perform chi-square test
+chi_result <- chisq.test(contingency_table)
+
+# Print chi-square results
+print(paste("Chi-Square Test between fluency_categorical and", var))
+print(chi_result)
+
+# Calculate residuals and adjusted residuals
+residuals <- chi_result$observed - chi_result$expected
+adjusted_residuals <- residuals / sqrt(chi_result$expected)
+
+# Print residuals and adjusted residuals
+print("Residuals:")
+print(residuals)
+print("Adjusted Residuals:")
+print(adjusted_residuals)
+
+calculate_pvalue <- function(z) {
+  2 * (1 - pnorm(abs(z)))
+}
+
+p_values <- apply(adjusted_residuals, c(1,2), calculate_pvalue)
+
+print("P-values:")
+print(p_values)
+
+# Calculate Cramér's V
+cramer_v <- assocstats(contingency_table)$cramer
+print(paste("Cramér's V:", cramer_v))
+
+# Bonferroni correction
+n_tests <- nrow(contingency_table) * ncol(contingency_table)
+alpha_adjusted <- 0.05 / n_tests
+
+print(paste("Bonferroni-corrected significance threshold:", alpha_adjusted))
+
+# Identify significant results after Bonferroni correction
+significant_results <- which(p_values < alpha_adjusted, arr.ind = TRUE)
+
+print("Significant results after Bonferroni correction:")
+for(i in 1:nrow(significant_results)) {
+  row <- significant_results[i, 1]
+  col <- significant_results[i, 2]
+  print(paste("Row:", rownames(p_values)[row], 
+              "Column:", colnames(p_values)[col], 
+              "Adjusted Residual:", adjusted_residuals[row, col], 
+              "P-value:", p_values[row, col]))
+}
+```
+
+### Chi-square for multiplication language
+
+```{r}
+
+# Filter data to remove na
+data_filtered <- data_chi |>
+    filter(!is.na(MultLang) & 
+           !is.na(fluency_score_quartile) & 
+           NativeLang %in% c("Malay", "Chinese", "English", "Others") &
+           fluency_score_quartile != "Missing")
+
+# Specify the categorical variable to analyze
+var <- "MultLang"
+
+# Create the contingency table
+contingency_table <- table(data_filtered[[var]], data_filtered$fluency_score_quartile)
+contingency_table
+
+# Perform chi-square test
+chi_result <- chisq.test(contingency_table)
+
+# Print chi-square results
+print(paste("Chi-Square Test between fluency_categorical and", var))
+print(chi_result)
+
+# Calculate residuals and adjusted residuals
+residuals <- chi_result$observed - chi_result$expected
+adjusted_residuals <- residuals / sqrt(chi_result$expected)
+
+# Print residuals and adjusted residuals
+print("Residuals:")
+print(residuals)
+print("Adjusted Residuals:")
+print(adjusted_residuals)
+
+calculate_pvalue <- function(z) {
+  2 * (1 - pnorm(abs(z)))
+}
+
+p_values <- apply(adjusted_residuals, c(1,2), calculate_pvalue)
+
+print("P-values:")
+print(p_values)
+
+# Calculate Cramér's V
+cramer_v <- assocstats(contingency_table)$cramer
+print(paste("Cramér's V:", cramer_v))
+
+# Bonferroni correction
+n_tests <- nrow(contingency_table) * ncol(contingency_table)
+alpha_adjusted <- 0.05 / n_tests
+
+print(paste("Bonferroni-corrected significance threshold:", alpha_adjusted))
+
+# Identify significant results after Bonferroni correction
+significant_results <- which(p_values < alpha_adjusted, arr.ind = TRUE)
+
+print("Significant results after Bonferroni correction:")
+for(i in 1:nrow(significant_results)) {
+  row <- significant_results[i, 1]
+  col <- significant_results[i, 2]
+  print(paste("Row:", rownames(p_values)[row], 
+              "Column:", colnames(p_values)[col], 
+              "Adjusted Residual:", adjusted_residuals[row, col], 
+              "P-value:", p_values[row, col]))
+}
+```
+
+## Chi-square for math language
+
+```{r}
+
+# Filter data to remove na
+data_filtered <- data_chi |>
+    filter(!is.na(MathLang_Primary) & 
+           !is.na(fluency_score_quartile) & 
+           MathLang_Primary %in% c("Malay", "Chinese", "English", "Others") &
+           fluency_score_quartile != "Missing")
+
+# Specify the categorical variable to analyze
+var <- "MathLang_Primary"
+
+# Create the contingency table
+contingency_table <- table(data_filtered[[var]], data_filtered$fluency_score_quartile)
+contingency_table
+
+# Perform chi-square test
+chi_result <- chisq.test(contingency_table)
+
+# Print chi-square results
+print(paste("Chi-Square Test between fluency_categorical and", var))
+print(chi_result)
+
+# Calculate residuals and adjusted residuals
+residuals <- chi_result$observed - chi_result$expected
+adjusted_residuals <- residuals / sqrt(chi_result$expected)
+
+# Print residuals and adjusted residuals
+print("Residuals:")
+print(residuals)
+print("Adjusted Residuals:")
+print(adjusted_residuals)
+
+calculate_pvalue <- function(z) {
+  2 * (1 - pnorm(abs(z)))
+}
+
+p_values <- apply(adjusted_residuals, c(1,2), calculate_pvalue)
+
+print("P-values:")
+print(p_values)
+
+# Calculate Cramér's V
+cramer_v <- assocstats(contingency_table)$cramer
+print(paste("Cramér's V:", cramer_v))
+
+# Bonferroni correction
+n_tests <- nrow(contingency_table) * ncol(contingency_table)
+alpha_adjusted <- 0.05 / n_tests
+
+print(paste("Bonferroni-corrected significance threshold:", alpha_adjusted))
+
+# Identify significant results after Bonferroni correction
+significant_results <- which(p_values < alpha_adjusted, arr.ind = TRUE)
+
+print("Significant results after Bonferroni correction:")
+for(i in 1:nrow(significant_results)) {
+  row <- significant_results[i, 1]
+  col <- significant_results[i, 2]
+  print(paste("Row:", rownames(p_values)[row], 
+              "Column:", colnames(p_values)[col], 
+              "Adjusted Residual:", adjusted_residuals[row, col], 
+              "P-value:", p_values[row, col]))
+}
+```
+
+## Chi-square for use of native lang in math
+
+```{r}
+# Filter data to remove na
+data_filtered <- data_chi |>
+    filter(!is.na(SameLang_pri) & 
+           !is.na(fluency_score_quartile) & 
+           SameLang_pri %in% c("Same", "Different") &
+           fluency_score_quartile != "Missing")
+
+# Specify the categorical variable to analyze
+var <- "SameLang_pri"
+
+# Create the contingency table
+contingency_table <- table(data_filtered[[var]], data_filtered$fluency_score_quartile)
+
+# Perform chi-square test
+chi_result <- chisq.test(contingency_table)
+
+# Print chi-square results
+print(paste("Chi-Square Test between fluency_categorical and", var))
+print(chi_result)
+
+# Calculate residuals and adjusted residuals
+residuals <- chi_result$observed - chi_result$expected
+adjusted_residuals <- residuals / sqrt(chi_result$expected)
+
+# Print residuals and adjusted residuals
+print("Residuals:")
+print(residuals)
+print("Adjusted Residuals:")
+print(adjusted_residuals)
+
+calculate_pvalue <- function(z) {
+  2 * (1 - pnorm(abs(z)))
+}
+
+p_values <- apply(adjusted_residuals, c(1,2), calculate_pvalue)
+
+print("P-values:")
+print(p_values)
+
+# Calculate Cramér's V
+cramer_v <- assocstats(contingency_table)$cramer
+print(paste("Cramér's V:", cramer_v))
+
+# Bonferroni correction
+n_tests <- nrow(contingency_table) * ncol(contingency_table)
+alpha_adjusted <- 0.05 / n_tests
+
+print(paste("Bonferroni-corrected significance threshold:", alpha_adjusted))
+
+# Identify significant results after Bonferroni correction
+significant_results <- which(p_values < alpha_adjusted, arr.ind = TRUE)
+
+print("Significant results after Bonferroni correction:")
+for(i in 1:nrow(significant_results)) {
+  row <- significant_results[i, 1]
+  col <- significant_results[i, 2]
+  print(paste("Row:", rownames(p_values)[row], 
+              "Column:", colnames(p_values)[col], 
+              "Adjusted Residual:", adjusted_residuals[row, col], 
+              "P-value:", p_values[row, col]))
+}
+
+```
+
+## Native language and multiplication table
+
+```{r}
+# Filter data to remove na
+data_filtered <- data_chi |>
+    filter(!is.na(SameLang_Mult) & 
+           !is.na(fluency_score_quartile) & 
+           SameLang_Mult %in% c("Same", "Different") &
+           fluency_score_quartile != "Missing")
+
+# Specify the categorical variable to analyze
+var <- "SameLang_Mult"
+
+# Create the contingency table
+contingency_table <- table(data_filtered[[var]], data_filtered$fluency_score_quartile)
+
+# Perform chi-square test
+chi_result <- chisq.test(contingency_table)
+
+# Print chi-square results
+print(paste("Chi-Square Test between fluency_categorical and", var))
+print(chi_result)
+
+# Calculate residuals and adjusted residuals
+residuals <- chi_result$observed - chi_result$expected
+adjusted_residuals <- residuals / sqrt(chi_result$expected)
+
+# Print residuals and adjusted residuals
+print("Residuals:")
+print(residuals)
+print("Adjusted Residuals:")
+print(adjusted_residuals)
+
+calculate_pvalue <- function(z) {
+  2 * (1 - pnorm(abs(z)))
+}
+
+p_values <- apply(adjusted_residuals, c(1,2), calculate_pvalue)
+
+print("P-values:")
+print(p_values)
+
+# Calculate Cramér's V
+cramer_v <- assocstats(contingency_table)$cramer
+print(paste("Cramér's V:", cramer_v))
+
+# Bonferroni correction
+n_tests <- nrow(contingency_table) * ncol(contingency_table)
+alpha_adjusted <- 0.05 / n_tests
+
+print(paste("Bonferroni-corrected significance threshold:", alpha_adjusted))
+
+# Identify significant results after Bonferroni correction
+significant_results <- which(p_values < alpha_adjusted, arr.ind = TRUE)
+
+print("Significant results after Bonferroni correction:")
+for(i in 1:nrow(significant_results)) {
+  row <- significant_results[i, 1]
+  col <- significant_results[i, 2]
+  print(paste("Row:", rownames(p_values)[row], 
+              "Column:", colnames(p_values)[col], 
+              "Adjusted Residual:", adjusted_residuals[row, col], 
+              "P-value:", p_values[row, col]))
+}
+```
+
+```{r}
+# Create the data frames
+math_data <- tribble(
+  ~Fluency_Level, ~Same, ~Different,
+  "Low", 139, 108,
+  "Average", 136, 64,
+  "Above_Average", 142, 65,
+  "High", 148, 59
+)
+
+multiplication_data <- tribble(
+  ~Fluency_Level, ~Same, ~Different,
+  "Low", 143, 104,
+  "Average", 137, 62,
+  "Above_Average", 145, 58,
+  "High", 146, 59
+)
+
+# Create contingency tables
+math_table <- math_data %>% 
+  select(-Fluency_Level) %>% 
+  as.matrix()
+
+multiplication_table <- multiplication_data %>% 
+  select(-Fluency_Level) %>% 
+  as.matrix()
+
+# Perform chi-square tests
+math_chi_square <- chisq.test(math_table)
+multiplication_chi_square <- chisq.test(multiplication_table)
+
+# Print the results
+print(math_chi_square)
+print(multiplication_chi_square)
+```
+
+A Chi-square test of independence was conducted to examine the relationship between the languages used during math learning (same or different) and the languages used during multiplication table instruction (same or different) with multiplication fluency (Low, Average, Above Average, and High). The results indicated a significant association between the languages used during math learning and multiplication fluency, X²(3, N = 900) = 14.05, p = .0028. Additionally, there was a significant association between the languages used during multiplication table instruction and multiplication fluency, X²(3, N = 900) = 12.98, p = .0047.
+
+## Breakdown of fluency score
+
+```{r}
+
+low_fluency_summary <- data |>
+  dplyr::filter(fluency_score <= 20) |>
+  tbl_summary(
+    include = c(Age, Ethnicity, ParentalEdu, MathLang_Primary,
+                MultLang, Primary_schoolType),
+    missing = "no"
+  ) %>%
+  add_n() %>%
+  bold_labels()
+
+low_fluency_summary 
+
+gt_obj <- as_gt(low_fluency_summary) |>
+  gt::gtsave(
+    file = "low_fluency_summary_table.png"
+  )
+
+```
+
+## Select Variables for Regression
+
+## Hierachical Regression
+
+```{r}
+
+m1 <- lm(fluency_score ~ ParentalEdu, data = data) |>
+  tbl_regression()
+
+m2 <- lm(fluency_score ~ ParentalEdu + MathLang_Primary, data = data) |>
+  tbl_regression()
+
+m3 <- lm(fluency_score ~ ParentalEdu + MathLang_Primary + MultLang, data = data) |>
+  tbl_regression()
+
+m4 <- lm(fluency_score ~ ParentalEdu + MathLang_Primary + MultLang + Primary_schoolType, data = data) |>
+  tbl_regression()
+
+# merge tables
+tbl_merge(list(m1, m2)) %>%
+  modify_table_body(~.x %>% arrange(row_type == "glance_statistic"))
+
+```
+
+```{r}
+
+
+```
+
+```{r}
+
+# results for regression
+
+print(summary(m1))
+summary(m2)
+
+```
+
+## Language abilities
+
+### Native languages
+
+### Number of languages
+
+## SES
+
+### Parental Education
+
+## Income
+
+## Development Impairment

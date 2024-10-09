@@ -1,0 +1,107 @@
+---
+title: "Research Question"
+format: html
+editor: visual
+---
+
+## Research Question
+
+### 1. What is the relationship between self-rated multiplication proficiency and actual multiplication fluency?
+
+```{r}
+
+cor.test(dataset$Multiplication_Fluency, dataset$Self_Rated_Proficiency)
+
+```
+
+### 2. How do sociodemographic factors (ethnicity, parental education, school type) influence multiplication fluency?
+
+```{r}
+
+lm1 <- lm(Multiplication_Fluency ~ Self_Rated_Proficiency + Ethnicity + Parental_Education + Math_Language + Language_Used + School_Type + Difficulties, data = dataset)
+summary(lm1)
+
+```
+
+### 3. Do sociodemographic factors influence self-rated multiplication proficiency?
+
+```{r}
+
+# Multiplication Fluency as the dependent variable
+model1 <- lmer(Multiplication_Fluency ~ Self_Rated_Proficiency + Ethnicity + Parental_Education + Math_Language + 
+               Language_Used + School_Type + Difficulties + (1 | School_ID), data = dataset)
+summary(model1)
+
+# Self-Rated Proficiency as the dependent variable
+model2 <- lmer(Self_Rated_Proficiency ~ Ethnicity + Parental_Education + Math_Language + 
+               Language_Used + School_Type + Difficulties + (1 | School_ID), data = dataset)
+summary(model2)
+
+```
+
+### 4. Is there a discrepancy between self-rated proficiency and actual fluency, and what factors contribute to this discrepancy?
+
+```{r}
+
+dataset$Discrepancy <- dataset$Self_Rated_Proficiency - dataset$Multiplication_Fluency
+lm_discrepancy <- lm(Discrepancy ~ Ethnicity + Parental_Education + Math_Language + Language_Used + School_Type + Difficulties, data = dataset)
+summary(lm_discrepancy)
+
+```
+
+### 5. How does the language used to learn multiplication and math language in primary school affect multiplication fluency and self-rated proficiency?
+
+```{r}
+
+# T-test for difficulties in learning multiplication
+t.test(Multiplication_Fluency ~ Difficulties, data = dataset)
+t.test(Self_Rated_Proficiency ~ Difficulties, data = dataset)
+
+# ANOVA for other categorical variables
+anova1 <- aov(Multiplication_Fluency ~ Ethnicity + Parental_Education + School_Type, data = dataset)
+summary(anova1)
+
+anova2 <- aov(Self_Rated_Proficiency ~ Ethnicity + Parental_Education + School_Type, data = dataset)
+summary(anova2)
+
+```
+
+### 6. Do students with difficulties in learning multiplication have lower multiplication fluency and self-rated proficiency?
+
+## Language-related analysis
+
+### 1. Is there a relationship between the native language and the language used for learning math and multiplication in schools?
+
+```{r}
+
+# Crosstabulation
+table_native_math <- table(dataset$Native_Language, dataset$Math_Language)
+table_native_mult <- table(dataset$Native_Language, dataset$Language_Used)
+
+# Chi-Square Test
+chisq.test(table_native_math)
+chisq.test(table_native_mult)
+```
+
+### 2. How does proficiency in second languages impact multiplication fluency and self-rated proficiency?
+
+```{r}
+
+# Assuming proficiency scores for second languages are stored in separate columns
+lm2 <- lm(Multiplication_Fluency ~ Proficiency_Mandarin + Proficiency_English + Proficiency_Hokkien + 
+          Proficiency_Cantonese + Proficiency_Malay + Ethnicity + Parental_Education + 
+          Math_Language + Language_Used + School_Type + Difficulties, data = dataset)
+summary(lm2)
+
+lm3 <- lm(Self_Rated_Proficiency ~ Proficiency_Mandarin + Proficiency_English + Proficiency_Hokkien + 
+          Proficiency_Cantonese + Proficiency_Malay + Ethnicity + Parental_Education + 
+          Math_Language + Language_Used + School_Type + Difficulties, data = dataset)
+summary(lm3)
+
+```
+
+### 3. Do students whose native language matches the language used for learning math and multiplication in schools perform better in multiplication fluency and self-rated proficiency?
+
+### 4. Is there a difference in multiplication fluency and self-rated proficiency based on the number of languages spoken?
+
+### 5. How does self-rated proficiency in second languages correlate with self-rated multiplication proficiency?

@@ -1,0 +1,316 @@
+---
+title: "Multilevel Analysis"
+format: html
+editor: visual
+---
+
+## Libraries
+
+```{r}
+# Need to record the version of each software used.
+library(lme4) 
+library(lmerTest)  # For p-values in mixed models
+library(ggplot2)   
+library(sjPlot)    # For model diagnostics and visualization
+
+
+
+```
+
+## Data
+
+Cleaned data - Prior to the analysis, need to ensure we have sufficient sample sizes at each level and the variable (Major) would be most appropriate as the level 2 grouping variable.
+
+```{r}
+
+# The dataframe iscalled 'df'
+
+df <- read_csv("01_CleanedData/chi_square_df.csv") |>
+  mutate(across(c(Sex, Nationality, Ethnicity, StudyLevel, Major, ParentalEdu, Handedness,
+                  NativeLang, SecondLang, MathLang_Primary, MultLang, SchoolType_Primary,
+                  MathDiff, MultLearning_normal, MultLearning_time, MultLearning_peers,
+                  ReadingProblem, MathAnxiety, ExamAnxiety, MemoryAnxiety, SameLang_pri,     
+                  SameLang_Mult, PastMedDiagnosis),  
+                as.factor))
+
+# Define levels for Major
+df$Major <- factor(df$Major, 
+                   levels = c("Education", "Biomedical Sciences",
+                              "Computer Science/IT", "Others", "Psychology"))
+
+# Define levels for ParentalEdu
+df$ParentalEdu <- factor(df$ParentalEdu, 
+                         levels = c("No", "Yes, mother only", 
+                                    "Yes, father only", "Yes, both parents"))
+
+# Define levels for PastMedDiagnosis
+df$PastMedDiagnosis <- factor(df$PastMedDiagnosis, 
+                              levels = c("No", "Undisclosed", "Yes"))
+
+# Define levels for SameLang_pri and SameLang_Mult
+df$SameLang_pri <- factor(df$SameLang_pri, 
+                          levels = c("Same", "Different"))
+df$SameLang_Mult <- factor(df$SameLang_Mult, 
+                           levels = c("Same", "Different"))
+
+# Define levels for SchoolType_Primary
+df$SchoolType_Primary <- factor(df$SchoolType_Primary, 
+                                levels = c("Public", "Homeschooling", 
+                                           "Private", "Religious", "Vernacular", 
+                                           "Overseas", "Unspecified", "Other"))
+
+# Define levels for MathDiff, MultLearning_normal, MultLearning_time, and MultLearning_peers
+df$MathDiff <- factor(df$MathDiff, 
+                      levels = c("No", "Yes"))
+df$MultLearning_normal <- factor(df$MultLearning_normal, 
+                                 levels = c("No", "Yes"))
+df$MultLearning_time <- factor(df$MultLearning_time, 
+                               levels = c("No", "Yes"))
+df$MultLearning_peers <- factor(df$MultLearning_peers, 
+                                levels = c("No", "Yes"))
+
+# Define levels for ReadingProblem, ExamAnxiety, MemoryAnxiety, and MathAnxiety
+df$ReadingProblem <- factor(df$ReadingProblem, 
+                            levels = c("No", "Yes"))
+df$ExamAnxiety <- factor(df$ExamAnxiety, 
+                         levels = c("No", "Yes"))
+df$MemoryAnxiety <- factor(df$MemoryAnxiety, 
+                           levels = c("No", "Yes"))
+df$MathAnxiety <- factor(df$MathAnxiety, 
+                         levels = c("No", "Yes"))
+
+# Filter the data based on specified conditions
+df <- df %>%
+  mutate(
+    # Recode learning difficulties to NA for any value other than "Yes" or "No"
+    MathDiff = recode(MathDiff, "Yes" = "Yes", "No" = "No", .default = NA_character_),
+    MultLearning_normal = recode(MultLearning_normal, "Yes" = "Yes", "No" = "No", .default = NA_character_),
+    MultLearning_time = recode(MultLearning_time, "Yes" = "Yes", "No" = "No", .default = NA_character_),
+    MultLearning_peers = recode(MultLearning_peers, "Yes" = "Yes", "No" = "No", .default = NA_character_),
+    ReadingProblem = recode(ReadingProblem, "Yes" = "Yes", "No" = "No", .default = NA_character_),
+    MathAnxiety = recode(MathAnxiety, "Yes" = "Yes", "No" = "No", .default = NA_character_),
+    ExamAnxiety = recode(ExamAnxiety, "Yes" = "Yes", "No" = "No", .default = NA_character_),
+    MemoryAnxiety = recode(MemoryAnxiety, "Yes" = "Yes", "No" = "No", .default = NA_character_),
+    
+    # Recode SchoolType_Primary to include only specified types; others coded as "Other"
+    SchoolType_Primary = recode(SchoolType_Primary, 
+                                 Public = "Public", 
+                                 Vernacular = "Vernacular", 
+                                 Private = "Private", 
+                                 Religious = "Religious", 
+                                 Homeschooling = "Homeschooling", 
+                                 .default = "Other")
+  ) %>%
+  filter(
+    !is.na(MathDiff),
+    !is.na(MultLearning_normal),
+    !is.na(MultLearning_time),
+    !is.na(MultLearning_peers),
+    !is.na(ReadingProblem),
+    !is.na(MathAnxiety),
+    !is.na(ExamAnxiety),
+    !is.na(MemoryAnxiety),
+    SchoolType_Primary %in% c("Public", "Vernacular", "Private", "Religious", "Homeschooling")
+  )
+
+# Update Ethnicity, Sex, StudyLevel, Major, and ParentalEdu factor levels
+# Ethnicity: Include only Malay, Chinese, Indian, and Others; set Malay as reference
+df$Ethnicity <- factor(df$Ethnicity, 
+                       levels = c("Malay", "Chinese", "Indian", "Others"))
+
+# Sex: Remove "Others" and set Female as reference
+df$Sex <- factor(df$Sex, 
+                 levels = c("Female", "Male"))
+
+# StudyLevel: Set Freshman as reference
+df$StudyLevel <- df$StudyLevel %>%
+  na_if("Missing") %>%
+  factor(levels = c("Freshman/First Year", "Sophomore/Second Year", 
+                    "Junior/Third Year", "Senior/Fourth Year", 
+                    "Graduate Student"), 
+         labels = c("Freshman", "Sophomore", "Junior", "Senior", "Graduate"))
+
+# Major: Set Education as reference
+df$Major <- factor(df$Major, 
+                   levels = c("Education", "Biomedical Sciences", 
+                              "Computer Science/IT", "Others", "Psychology"))
+
+# ParentalEdu: Set No as reference
+df$ParentalEdu <- factor(df$ParentalEdu, 
+                         levels = c("No", "Yes, mother only", 
+                                    "Yes, father only", "Yes, both parents"))
+
+# Ensure the filtered_data contains the desired variables and levels
+filtered_data <- df %>%
+  select(Ethnicity, Sex, StudyLevel, Major, ParentalEdu, everything())
+
+# Check the cleaned data structure
+str(filtered_data)
+
+
+```
+
+## Centering data
+
+```{r}
+# Make sure all categorical variables are factors
+df$Sex <- as.factor(df$Sex)
+df$Ethnicity <- as.factor(df$Ethnicity)
+df$Major <- as.factor(df$Major)
+df$ParentalEdu <- as.factor(df$ParentalEdu)
+df$PastMedDiagnosis <- as.factor(df$PastMedDiagnosis)
+df$school <- as.factor(df$school)
+
+# Center Age at grand mean
+df$Age_centered <- scale(df$Age, scale = FALSE)
+```
+
+## Models
+
+```{r}
+#| echo: false
+# 1. Null Model (Random Intercept Only)
+null_model <- lmer(fluency_score ~ 1 + (1|school), data = df, REML = FALSE)
+summary(null_model)
+
+# Calculate ICC
+library(performance)
+icc <- icc(null_model)
+print(icc)
+
+# 2. Random Intercept Model
+ri_model <- lmer(fluency_score ~ Age_centered + Sex + Ethnicity + Major + StudyLevel + 
+                 ParentalEdu + PastMedDiagnosis + (1 | school), 
+                 data = df, REML = FALSE)
+summary(ri_model)
+
+# 3. Random Slope Model (allowing the effect of Age to vary across Majors)
+rs_model <- lmer(fluency_score ~ Age_centered + Sex + Ethnicity + Major + StudyLevel + 
+                 ParentalEdu + PastMedDiagnosis + (Ethnicity |school), 
+                 data = df, REML = FALSE)
+
+# Model comparisons
+anova(null_model, ri_model, rs_model)
+
+# Summary of the best fitting model (assuming it's the random slope model)
+summary(rs_model)
+```
+
+## Compare models
+
+```{r}
+anova(null_model, ri_model)
+```
+
+## Random slope model
+
+overfitting, singularity, worse fit
+
+so stick with random intercept models with ethnicity as fixed effect.
+
+### Interaction slope model
+
+Tried interaction model, but really overfitting (rank-deficient)
+
+```{r}
+
+interaction_model <- lmer(fluency_score ~ Age_centered + Sex + Ethnicity * Major + 
+                            school + StudyLevel + ParentalEdu + 
+                          PastMedDiagnosis + (1|school), 
+                          data = df, REML = FALSE)
+summary(interaction_model)
+```
+
+## Linguistic Model
+
+languages predictors
+
+```{r}
+
+# languages
+model_la <- lmer(fluency_score ~ NativeLang + SecondLang + MathLang_Primary + MultLang + 
+              SameLang_pri + SameLang_Mult + 
+              (1 | school), 
+              data = df)
+
+summary(model_la)
+anova(model_la)
+
+
+# school types
+model_school_type <- lmer(fluency_score ~ NativeLang + SecondLang + MathLang_Primary + 
+                          MultLang + SameLang_pri + SameLang_Mult + SchoolType_Primary + 
+                          (1 | school),
+                          data = df)
+
+summary(model_school_type)
+
+anova(model_la, model_school_type)
+```
+
+### Check school differences
+
+```{r}
+library(emmeans)
+emm <- emmeans(ri_model, ~ Major | school)
+pairs(emm)
+
+library(ggplot2)
+
+# Assuming df has a 'predicted' column from the ri_model
+df$predicted <- predict(ri_model)
+
+ggplot(df, aes(x = Major, y = fluency_score, color = school)) +
+  geom_boxplot() +
+  geom_point(aes(y = predicted), position = position_dodge(width = 0.75), shape = 18, size = 3) +
+  theme_minimal() +
+  labs(title = "Fluency Scores by Major and School",
+       subtitle = "Points represent model predictions",
+       y = "Fluency Score")
+```
+
+## Check models
+
+```{r}
+
+# Calculate ICC (Intraclass Correlation Coefficient)
+icc <- performance::icc(rs_model)
+print(icc)
+
+# Model diagnostics
+plot(rs_model)  # Residual plots
+
+# Check for multicollinearity
+vif <- car::vif(rs_model)
+print(vif)
+```
+
+```{r}
+# Extract random effects
+re <- ranef(ri_model)$school
+re$school <- rownames(re)
+
+ggplot(re, aes(x = school, y = `(Intercept)`)) +
+  geom_point() +
+  geom_errorbar(aes(ymin = `(Intercept)` - 1.96*`(Intercept).se`, 
+                    ymax = `(Intercept)` + 1.96*`(Intercept).se`)) +
+  theme_minimal() +
+  labs(title = "School Random Effects with 95% CI",
+       y = "Random Intercept")
+
+```
+
+```{r}
+
+# If you want to examine cross-level interactions, you can add them to the model
+# For example, interaction between Ethnicity and Major:
+interaction_model <- lmer(fluency_score ~ Age_centered + Sex + Ethnicity * Major + 
+                          StudyLevel + ParentalEdu + PastMedDiagnosis + 
+                          (1 + Age_centered|Major), 
+                          data = df, REML = FALSE)
+
+summary(interaction_model)
+
+# Compare with previous best model
+anova(rs_model, interaction_model)
+```

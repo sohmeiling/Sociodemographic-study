@@ -1,0 +1,87 @@
+---
+title: "01_Data-cleaning"
+format: html
+editor: visual
+---
+
+## Packages
+
+```{r message=FALSE}
+library(tidyverse)
+library(readxl)
+```
+
+## Import data
+
+The data collection was conducted from Jan 2020 to March 2020. Following lockdown, the data collection was paused and resumed in 2021.
+
+```{r}
+# Import demographic survey data
+demo <- read_excel("00_RawData/02_combined_MultiplicationFluency(N1169).xlsx") |>
+  dplyr::select("participant", "Age", "Sex", "Nationality", "Ethnicity", "StudyLevel", 
+                "Major", "ParentalEdu", "Handedness", "PastMedDiagnosis", 
+                "NativeLang", "SecondLang", "MathLang_Primary", "MultLang",
+                "SchoolType_Primary", "MathDiff", 
+                "MultLearning_normal",	"MultLearning_time",	"MultLearning_peers",
+                "MultLearning_score",	"ReadingProblem",	"MathAnxiety",
+                "ExamAnxiety",	"MemoryAnxiety") |>
+  mutate(
+    participant = as.factor(participant),
+    Age = as.numeric(Age),
+    Sex = as.factor(Sex),
+    Nationality = as.factor(Nationality),
+    Ethnicity = as.factor(Ethnicity),
+    StudyLevel = as.factor(StudyLevel),
+    Major = as.factor(Major),
+    ParentalEdu = as.factor(ParentalEdu),
+    Handedness = as.factor(Handedness),
+    PastMedDiagnosis = as.factor(PastMedDiagnosis),
+    NativeLang = as.factor(NativeLang),
+    SecondLang = as.factor(SecondLang),
+    MathLang_Primary = as.factor(MathLang_Primary),
+    MultLang = as.factor(MultLang),
+    SchoolType_Primary = as.factor(SchoolType_Primary),
+    MathDiff = as.factor(MathDiff),
+    MultLearning_normal = as.factor(MultLearning_normal),
+    MultLearning_time = as.factor(MultLearning_time),
+    MultLearning_peers = as.factor(MultLearning_peers),
+    MultLearning_score = as.numeric(MultLearning_score),
+    ReadingProblem = as.factor(ReadingProblem),
+    MathAnxiety = as.factor(MathAnxiety),
+    ExamAnxiety = as.factor(ExamAnxiety),
+    MemoryAnxiety = as.factor(MemoryAnxiety)
+  )|>
+  mutate(
+    ParentalEdu = factor(ParentalEdu, levels = c("No", "Yes, father only", "Yes, mother only", "Yes, both parents", "Undisclosed")),
+    StudyLevel = factor(StudyLevel, levels = c("Freshman/First Year", "Sophomore/Second Year", "Junior/Third Year", "Senior/Fourth Year", "Graduate Student", "Unspecified"))
+  )
+
+# Import fluency data
+fluency <- read_excel("00_RawData/fluency_score.xlsx")|>
+  dplyr::select("participant", "fluency_score") |>
+  mutate(
+    participant = as.factor(participant),
+    fluency_score = as.numeric(fluency_score)
+  )
+
+combined <- left_join(fluency, demo, by = "participant") |>
+  write_csv("01_CleanedData/03_combinedData(N= 1153).csv") |>
+  dplyr::filter(Nationality == 'Malaysian') |>
+  write_csv("01_CleanedData/04_combined-and-filtered_Data(N= 900).csv")
+
+```
+
+## Demographic data (Method section)
+
+```{r}
+
+n_sex <- read_csv("01_CleanedData/04_combined-and-filtered_Data(N= 900).csv") |>
+  group_by(Sex) |>
+  summarize(n = n())
+
+age_range <- read_csv("01_CleanedData/04_combined-and-filtered_Data(N= 900).csv") |>
+  summarise(
+    mean = mean(Age, na.rm = TRUE),
+    sd = sd(Age, na.rm = TRUE)
+  )
+```

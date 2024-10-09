@@ -1,0 +1,411 @@
+---
+title: "Regression"
+format: html
+editor: visual
+---
+
+## Libraries
+
+```{r message=FALSE, warning=FALSE}
+
+#| warning = false
+
+library(tidyverse)
+library(gtsummary)
+library(GGally)
+library(kableExtra)
+library(openxlsx)
+library(Hmisc)
+library(vcd)
+library(broom)
+library(performance)
+```
+
+## Data
+
+```{r}
+
+# Read the CSV file and convert specified columns to factors
+df <- read_csv("01_CleanedData/chi_square_df.csv") |>
+  mutate(across(c(Sex, Nationality, Ethnicity, StudyLevel, Major, ParentalEdu, Handedness,
+                  NativeLang, SecondLang, MathLang_Primary, MultLang, SchoolType_Primary,
+                  MathDiff, MultLearning_normal, MultLearning_time, MultLearning_peers,
+                  ReadingProblem, MathAnxiety, ExamAnxiety, MemoryAnxiety, SameLang_pri,     
+                  SameLang_Mult, PastMedDiagnosis),  
+                as.factor))
+
+# Define levels for Major
+df$Major <- factor(df$Major, 
+                   levels = c("Education", "Biomedical Sciences",
+                              "Computer Science/IT", "Others", "Psychology"))
+
+# Define levels for ParentalEdu
+df$ParentalEdu <- factor(df$ParentalEdu, 
+                         levels = c("No", "Yes, mother only", 
+                                    "Yes, father only", "Yes, both parents"))
+
+# Define levels for PastMedDiagnosis
+df$PastMedDiagnosis <- factor(df$PastMedDiagnosis, 
+                              levels = c("No", "Undisclosed", "Yes"))
+
+# Define levels for SameLang_pri and SameLang_Mult
+df$SameLang_pri <- factor(df$SameLang_pri, 
+                          levels = c("Same", "Different"))
+df$SameLang_Mult <- factor(df$SameLang_Mult, 
+                           levels = c("Same", "Different"))
+
+# Define levels for SchoolType_Primary
+df$SchoolType_Primary <- factor(df$SchoolType_Primary, 
+                                levels = c("Public", "Homeschooling", 
+                                           "Private", "Religious", "Vernacular", 
+                                           "Overseas", "Unspecified", "Other"))
+
+# Define levels for MathDiff, MultLearning_normal, MultLearning_time, and MultLearning_peers
+df$MathDiff <- factor(df$MathDiff, 
+                      levels = c("No", "Yes"))
+df$MultLearning_normal <- factor(df$MultLearning_normal, 
+                                 levels = c("No", "Yes"))
+df$MultLearning_time <- factor(df$MultLearning_time, 
+                               levels = c("No", "Yes"))
+df$MultLearning_peers <- factor(df$MultLearning_peers, 
+                                levels = c("No", "Yes"))
+
+# Define levels for ReadingProblem, ExamAnxiety, MemoryAnxiety, and MathAnxiety
+df$ReadingProblem <- factor(df$ReadingProblem, 
+                            levels = c("No", "Yes"))
+df$ExamAnxiety <- factor(df$ExamAnxiety, 
+                         levels = c("No", "Yes"))
+df$MemoryAnxiety <- factor(df$MemoryAnxiety, 
+                           levels = c("No", "Yes"))
+df$MathAnxiety <- factor(df$MathAnxiety, 
+                         levels = c("No", "Yes"))
+
+# Filter the data based on specified conditions
+df <- df %>%
+  mutate(
+    # Recode learning difficulties to NA for any value other than "Yes" or "No"
+    MathDiff = recode(MathDiff, "Yes" = "Yes", "No" = "No", .default = NA_character_),
+    MultLearning_normal = recode(MultLearning_normal, "Yes" = "Yes", "No" = "No", .default = NA_character_),
+    MultLearning_time = recode(MultLearning_time, "Yes" = "Yes", "No" = "No", .default = NA_character_),
+    MultLearning_peers = recode(MultLearning_peers, "Yes" = "Yes", "No" = "No", .default = NA_character_),
+    ReadingProblem = recode(ReadingProblem, "Yes" = "Yes", "No" = "No", .default = NA_character_),
+    MathAnxiety = recode(MathAnxiety, "Yes" = "Yes", "No" = "No", .default = NA_character_),
+    ExamAnxiety = recode(ExamAnxiety, "Yes" = "Yes", "No" = "No", .default = NA_character_),
+    MemoryAnxiety = recode(MemoryAnxiety, "Yes" = "Yes", "No" = "No", .default = NA_character_),
+    
+    # Recode SchoolType_Primary to include only specified types; others coded as "Other"
+    SchoolType_Primary = recode(SchoolType_Primary, 
+                                 Public = "Public", 
+                                 Vernacular = "Vernacular", 
+                                 Private = "Private", 
+                                 Religious = "Religious", 
+                                 Homeschooling = "Homeschooling", 
+                                 .default = "Other")
+  ) %>%
+  filter(
+    !is.na(MathDiff),
+    !is.na(MultLearning_normal),
+    !is.na(MultLearning_time),
+    !is.na(MultLearning_peers),
+    !is.na(ReadingProblem),
+    !is.na(MathAnxiety),
+    !is.na(ExamAnxiety),
+    !is.na(MemoryAnxiety),
+    SchoolType_Primary %in% c("Public", "Vernacular", "Private", "Religious", "Homeschooling")
+  )
+
+# Update Ethnicity, Sex, StudyLevel, Major, and ParentalEdu factor levels
+# Ethnicity: Include only Malay, Chinese, Indian, and Others; set Malay as reference
+df$Ethnicity <- factor(df$Ethnicity, 
+                       levels = c("Malay", "Chinese", "Indian", "Others"))
+
+# Sex: Remove "Others" and set Female as reference
+df$Sex <- factor(df$Sex, 
+                 levels = c("Female", "Male"))
+
+# StudyLevel: Set Freshman as reference
+df$StudyLevel <- df$StudyLevel %>%
+  na_if("Missing") %>%
+  factor(levels = c("Freshman/First Year", "Sophomore/Second Year", 
+                    "Junior/Third Year", "Senior/Fourth Year", 
+                    "Graduate Student"), 
+         labels = c("Freshman", "Sophomore", "Junior", "Senior", "Graduate"))
+
+# Major: Set Education as reference
+df$Major <- factor(df$Major, 
+                   levels = c("Education", "Biomedical Sciences", 
+                              "Computer Science/IT", "Others", "Psychology"))
+
+# ParentalEdu: Set No as reference
+df$ParentalEdu <- factor(df$ParentalEdu, 
+                         levels = c("No", "Yes, mother only", 
+                                    "Yes, father only", "Yes, both parents"))
+
+# Ensure the filtered_data contains the desired variables and levels
+filtered_data <- df %>%
+  select(Ethnicity, Sex, StudyLevel, Major, ParentalEdu, everything())
+
+# Check the cleaned data structure
+str(filtered_data)
+
+```
+
+## Do not use the below code.
+
+```{r}
+
+#df1 <- read_csv("01_CleanedData/final_df.csv")
+
+df <- read_csv("01_CleanedData/chi_square_df.csv") |>
+  mutate(across(c(Sex, Nationality, Ethnicity, StudyLevel, Major, ParentalEdu, Handedness,
+                  NativeLang, SecondLang, MathLang_Primary, MultLang, SchoolType_Primary,
+                  MathDiff, MultLearning_normal, MultLearning_time, MultLearning_peers,
+                  ReadingProblem, MathAnxiety, ExamAnxiety, MemoryAnxiety, SameLang_pri,     SameLang_Mult, PastMedDiagnosis), 
+                as.factor))
+
+df$Major <- factor(df$Major, levels = c("Education", "Biomedical Sciences", "Computer Science/IT", "Others", "Psychology", "Missing"))
+
+df$ParentalEdu <- factor(df$ParentalEdu, levels = c("No", "Yes, mother only", "Yes, father only", "Yes, both parents", "Missing"))
+
+df$PastMedDiagnosis <- factor(df$PastMedDiagnosis, levels = c("No", "Undisclosed", "Yes"))
+
+df$SameLang_pri <- factor(df$SameLang_pri, levels = c("Same", "Different"))
+df$SameLang_Mult <- factor(df$SameLang_Mult, levels = c("Same", "Different"))
+
+df$SchoolType_Primary <- factor(df$SchoolType_Primary, levels = c("Public",
+    "Homeschooling", "Private", "Religious", "Vernacular", 
+    "Overseas", "Unspecified", "Other"
+))
+
+
+df$MathDiff <- factor(df$MathDiff, levels = c("No", "Undisclosed", "Yes"))
+df$MultLearning_normal <- factor(df$MultLearning_normal, levels = c("No", "Undisclosed", "Yes"))
+df$MultLearning_time <- factor(df$MultLearning_time, levels = c("No", "Undisclosed", "Yes"))
+df$MultLearning_peers <- factor(df$MultLearning_peers, levels = c("No", "Undisclosed", "Yes"))
+
+
+df$ReadingProblem <- factor(df$ReadingProblem, levels = c("No", "Unspecified", "Yes"))
+df$ExamAnxiety <- factor(df$ExamAnxiety, levels = c("No", "Unspecified", "Yes"))
+df$MemoryAnxiety <- factor(df$MemoryAnxiety, levels = c("No", "Unspecified", "Yes"))
+df$MathAnxiety <- factor(df$MathAnxiety, levels = c("No", "Unspecified", "Yes"))
+
+filtered_data <- df %>%
+  filter(MathDiff %in% c("Yes", "No"),
+         MultLearning_normal %in% c("Yes", "No"),
+         MultLearning_time %in% c("Yes", "No"),
+         MultLearning_peers %in% c("Yes", "No"),
+         ReadingProblem %in% c("Yes", "No"),
+         MathAnxiety %in% c("Yes", "No"),
+         ExamAnxiety %in% c("Yes", "No"),
+         MemoryAnxiety %in% c("Yes", "No"),
+         SchoolType_Primary %in% c("Vernacular", "Public", "Private", "Religious", "Homeschooling", "Religious"))
+
+
+```
+
+## Model 1: Demographic factors
+
+```{r}
+
+clean_data <- filtered_data %>%
+  select(fluency_score, Age, Sex, Ethnicity, StudyLevel, Major, ParentalEdu) %>%
+  na.omit() 
+
+# Step 1: First model with demographic variables (Age, Sex, Ethnicity)
+model1 <- lm(fluency_score ~ Age + Sex + Ethnicity, data = clean_data)
+ci <- confint(model1, level = 0.95)
+
+summary(model1)
+print(ci)
+
+# Step 2: Second model with additional variables (StudyLevel, Major)
+model2 <- lm(fluency_score ~ Age + Sex + Ethnicity + StudyLevel + Major, data = clean_data)
+ci <- confint(model2, level = 0.95)
+summary(model2)
+print(ci)
+
+# Step 3: Third model with ParentalEdu
+model3 <- lm(fluency_score ~ Age + Sex + Ethnicity + StudyLevel + Major + ParentalEdu, data = clean_data)
+ci <- confint(model3, level = 0.95)
+summary(model3)
+print(ci)
+
+# Optional: Compare models
+anova(model1, model2, model3)
+
+# Optional: Tidy the results for easier interpretation
+model_results <- list(model1, model2, model3) %>% 
+  lapply(broom::tidy) %>%
+  bind_rows(.id = "model")
+
+# View the tidy results
+print(model_results)
+```
+
+# Do not use the below code.
+
+```{r}
+
+model1a <- lm(fluency_score ~ Age + Sex + Ethnicity + StudyLevel , data = filtered_data)
+
+model1b <- lm(fluency_score ~ Age + Sex + Ethnicity + StudyLevel + 
+               Major + ParentalEdu +  PastMedDiagnosis, data = filtered_data)
+
+summary(model1a)
+summary(model1b)
+
+anova(model1a, model1b)
+```
+
+## Model 2: Add language/educational factors
+
+```{r}
+
+cleaned_data <- filtered_data %>%
+  select(fluency_score, SameLang_pri, SameLang_Mult, SchoolType_Primary, NativeLang, MathLang_Primary, MultLang) %>%
+  na.omit() 
+
+# Model 1
+
+all_lang_model <- lm(fluency_score ~ SameLang_pri + SameLang_Mult + 
+                               SchoolType_Primary + NativeLang + 
+                       MathLang_Primary + 
+                       MultLang, data = cleaned_data)
+ci <- confint(all_lang_model, level = 0.95)
+summary(all_lang_model)
+print(ci)
+
+# Model 2
+
+reduced_lang_model <- lm(fluency_score ~ SameLang_pri + SameLang_Mult + 
+                               SchoolType_Primary + NativeLang + 
+                       MultLang, data = cleaned_data)
+ci <- confint(reduced_lang_model, level = 0.95)
+summary(reduced_lang_model)
+print(ci)
+
+
+# Model 3
+
+pars_model <- lm(fluency_score ~ SchoolType_Primary + NativeLang + 
+                       MultLang, data = cleaned_data)
+ci <- confint(pars_model, level = 0.95)
+summary(pars_model)
+print(ci)
+
+
+# anova
+
+anova(all_lang_model, reduced_lang_model, pars_model)
+```
+
+To address the multicollinearity issue in MathLang_Primary and MultLang
+
+```{r}
+# Create a contingency table
+contingency_table <- table(cleaned_data$MathLang_Primary, cleaned_data$MultLang)
+
+# Perform the Chi-squared test
+chi_squared_result <- chisq.test(contingency_table)
+
+# Print the result
+print(chi_squared_result)
+
+```
+
+## Learning variables
+
+```{r}
+# Clean and prepare the data
+learning_data <- filtered_data %>%
+  select(fluency_score, MathDiff, 
+         MultLearning_normal,MultLearning_time, MultLearning_peers, MathAnxiety) %>%
+  na.omit()
+
+# Hierarchical regression: Model 1 with MathDiff
+model1 <- lm(fluency_score ~ MathDiff, data = learning_data)
+
+# Hierarchical regression: Model 2 with MathDiff and MultLearning_normal
+model2 <- lm(fluency_score ~ MathDiff + MultLearning_normal, data = learning_data)
+
+# Hierarchical regression: Model 3 with MathDiff, MultLearning_normal, and MultLearning_time
+model3 <- lm(fluency_score ~ MathDiff + MultLearning_normal + MultLearning_time, data = learning_data)
+
+# Hierarchical regression: Model 4 with all predictors
+model4 <- lm(fluency_score ~ MathDiff + MultLearning_normal + MultLearning_peers, data = learning_data)
+
+model5 <- lm(fluency_score ~ MathDiff + MultLearning_normal + MultLearning_peers + MathAnxiety, data = learning_data)
+
+# Summarize each model
+summary(model1)
+ci <- confint(model1, level = 0.95)
+print(ci)
+summary(model2)
+ci <- confint(model2, level = 0.95)
+print(ci)
+summary(model3)
+ci <- confint(model3, level = 0.95)
+print(ci)
+summary(model4)
+ci <- confint(model4, level = 0.95)
+print(ci)
+summary(model5)
+ci <- confint(model5, level = 0.95)
+print(ci)
+
+# Optionally: Compare models using ANOVA
+anova(model1, model2)
+anova(model2, model3)
+anova(model2, model4)
+anova(model4, model5)
+
+anova(model1, model2, model3, model4,model5)
+```
+
+## do not use the below code.
+
+```{r}
+
+df_clean <- na.omit(filtered_data[, c("fluency_score","MathDiff", "MultLearning_normal",
+                           "MultLearning_time", "MultLearning_peers", 
+                           "MathAnxiety", "SchoolType_Primary", 
+                           "SameLang_pri", "SameLang_Mult", "num_Seclanguages")])
+
+
+model2a <- lm(fluency_score ~ MathDiff + MultLearning_normal + 
+                MultLearning_time + MultLearning_peers + 
+             MathAnxiety, data = df_clean)
+
+model2b <- lm(fluency_score ~ MathDiff + MultLearning_normal + 
+                MultLearning_time + MultLearning_peers + 
+             MathAnxiety + SchoolType_Primary + 
+              SameLang_pri + 
+               SameLang_Mult, data = df_clean)
+
+model2c <- lm(fluency_score ~ MathDiff + MultLearning_normal + 
+                MultLearning_time + MultLearning_peers + 
+             MathAnxiety+ SchoolType_Primary + 
+              SameLang_pri + 
+               SameLang_Mult + num_Seclanguages,
+              data = df_clean)
+
+summary(model2a)
+summary(model2b)
+summary(model2c)
+
+anova(model2a, model2b)
+anova(model2b, model2c)
+```
+
+```{r}
+# Check unique values for categorical variables
+categorical_vars <- c("Sex", "Nationality", "Ethnicity", "StudyLevel", "Major", 
+                       "ParentalEdu", "Handedness", "NativeLang", "SecondLang", 
+                       "MathLang_Primary", "MultLang", "SchoolType_Primary", 
+                       "MathDiff", "MultLearning_normal", "MultLearning_time", 
+                       "MultLearning_peers", "ReadingProblem", "MathAnxiety", 
+                       "ExamAnxiety", "MemoryAnxiety", "SameLang_pri", "SameLang_Mult")
+
+lapply(data[categorical_vars], unique)
+
+```

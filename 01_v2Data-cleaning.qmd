@@ -1,0 +1,607 @@
+---
+title: "01-Data Cleaning"
+format: html
+editor: visual
+---
+
+## Packages
+
+```{r message=FALSE}
+library(tidyverse)
+library(readxl)
+```
+
+## Import data
+
+The data collection was conducted from Jan 2020 to March 2020. Following lockdown, the data collection was paused and resumed in 2021.
+
+```{r}
+# Import demographic survey data
+demo <- read_excel("00_RawData/02_combined_MultiplicationFluency(N1169).xlsx") |>
+  dplyr::select("participant", "school", "Age", "Sex", 
+                "Nationality", "Ethnicity", "StudyLevel", 
+                "Major", "ParentalEdu", "Handedness", "PastMedDiagnosis", 
+                "NativeLang", "SecondLang", "MathLang_Primary", "MultLang",
+                "SecondLang_score1", "SecondLang_type1", 
+                "SecondLang_score2", "SecondLang_type2", 
+                "SecondLang_score3", "SecondLang_type3", 
+                "SecondLang_score4", "SecondLang_type4", 
+                "SecondLang_score5", "SecondLang_type5", 
+                "SecondLang_score6", "SecondLang_type6", 
+                "SecondLang_score7", "SecondLang_type7", 
+                "SchoolType_Primary", "MathDiff", 
+                "MultLearning_normal",	"MultLearning_time",	"MultLearning_peers",
+                "MultLearning_score",	"ReadingProblem",	"MathAnxiety",
+                "ExamAnxiety",	"MemoryAnxiety") |>
+  mutate(
+    participant = as.factor(participant),
+    Age = as.numeric(Age),
+    Sex = as.factor(Sex),
+    Nationality = as.factor(Nationality),
+    Ethnicity = as.factor(Ethnicity),
+    StudyLevel = as.factor(StudyLevel),
+    Major = as.factor(Major),
+    ParentalEdu = as.factor(ParentalEdu),
+    Handedness = as.factor(Handedness),
+    PastMedDiagnosis = as.factor(PastMedDiagnosis),
+    NativeLang = as.factor(NativeLang),
+    SecondLang = as.factor(SecondLang),
+    MathLang_Primary = as.factor(MathLang_Primary),
+    MultLang = as.factor(MultLang),
+    SchoolType_Primary = as.factor(SchoolType_Primary),
+    MathDiff = as.factor(MathDiff),
+    MultLearning_normal = as.factor(MultLearning_normal),
+    MultLearning_time = as.factor(MultLearning_time),
+    MultLearning_peers = as.factor(MultLearning_peers),
+    MultLearning_score = as.numeric(MultLearning_score),
+    ReadingProblem = as.factor(ReadingProblem),
+    MathAnxiety = as.factor(MathAnxiety),
+    ExamAnxiety = as.factor(ExamAnxiety),
+    MemoryAnxiety = as.factor(MemoryAnxiety)
+  ) |>
+  mutate(across(starts_with("SecondLang_score"), as.character))
+
+```
+
+## 
+
+Rearranging the languages columns
+
+```{r}
+# Create long format for scores
+scores_long <- demo |> 
+  pivot_longer(
+    cols = starts_with("SecondLang_score"), 
+    names_to = "SecondLangNo", 
+    values_to = "SecondLang_score"
+  ) |> 
+  mutate(SecondLangNo = str_extract(SecondLangNo, "\\d+"))|>
+  dplyr::select(participant, SecondLangNo, SecondLang_score)|>
+   filter(!is.na(SecondLang_score) & SecondLang_score != "-99" & SecondLang_score != "0")
+
+# Create long format for types
+types_long <- demo |> 
+  pivot_longer(
+    cols = starts_with("SecondLang_type"), 
+    names_to = "SecondLangNo", 
+    values_to = "SecondLang_type"
+  ) |> 
+  mutate(SecondLangNo = str_extract(SecondLangNo, "\\d+"))|>
+  dplyr::select(participant, SecondLangNo, SecondLang_type)|>
+  filter(!is.na(SecondLang_type) & SecondLang_type != "-99")
+
+# Join the score and type data
+secondLang <- types_long |> 
+  left_join(scores_long, by = c("participant", "SecondLangNo"))|>
+  filter(!is.na(SecondLang_type)) 
+
+# Function to display unique values for each column
+get_unique_values <- function(df) {
+  lapply(df, unique)
+}
+
+# Get unique values for each selected column
+# Print unique values for each column
+#print(get_unique_values(secondLang))
+
+
+```
+
+## Recode languages
+
+To recode the languages
+
+```{r}
+library(dplyr)
+library(stringr)
+
+language_mapping <- list(
+  Chinese = c("Chinese", "CHINESE", "Mandarin", "Mandarin Chinese", "mandarin", "MANDARIN", "chinese", "Chinese Mandarin", "Mandarian", "Mandrin", "Mandarine", "Mandarin chinese", "Cn", "Mandaarin"),
+  English = c("English", "ENGLISH", "english", "English Language", "English language", "Eng", "English9", "Engine"),
+  Malay = c("Malay", "MALAY", "malay", "Bahasa Malaysia", "Bahasa Melayu", "BM", "Bm", "Bahasa melayu", "Malay Language", "Malay language", "Malays", "Melayu", "Melay", "Malaysian", "BAHASA MALAYSIA", "Bahasa Malayu", "bahasa malayu", "Bahasa", "bahasa", "Baganda melayu", "Melei"),
+  Cantonese = c("Cantonese", "cantonese", "CANTONESE", "CantoneseI", "Chantonese", "mandarin dialect (cantonese)",  "Toi Shan"),
+  Hokkien = c("Hokkien", "hokkien", "Hokien", "Hokkian", "Hokkein", "Hokkien & Cantonese"),
+  Teochew = c("Teochew", "Teochew Dialect", "Teochow", "Teowchew", "Teow Chew", "teochew", "TEOCHEW", "Teo Chiew"),
+  Dhivehi = c("Dhivehi"),
+  French = c("French", "FRENCH", "french", "France", "FRANCE"),
+  Italian = c("Italian"),
+  Korean = c("Korean", "korean", "KOREAN", "Korea", "korea"),
+  Hindi = c("Hindi", "hindi", "Hindi/Punjabi"),
+  Japanese = c("Japanese", "japanese", "Japan"),
+  Tamil = c("Tamil", "TAMIL", "tamil"),
+  Hakka = c("Hakka", "hakka", "mandarin dialect (hakka)"),
+  Punjabi = c("Punjabi", "Panjabi"),
+  Hainanese = c("Hainanese"),
+  Indonesian = c("Indonesian", "Indonesia", "Bahasa Indonesia", "Indonesian‚Åπ"),
+  Marathi = c("Marathi"),
+  Malayalam = c("Malayalam"),
+  German = c("German", "german"),
+  Burmese = c("Burmese", "Myanmar"),
+  Creole = c("Creole", "Seychelles creole", "Mauritian Creole"),
+  Tagalog = c("Tagalog", "tagalog", "Filipino"),
+  Sinhala = c("Sinhala", "Sinhalese", "sinhala"),
+  Spanish = c("Spanish"),
+  Swahili = c("Swahili", "Kiswahili"),
+  Sichuan = c("Sichuan dialect"),
+  Thai = c("Thai", "Thailand"),
+  Telugu = c("Telugu"),
+  Arabic = c("Arabic", "ARABIC", "arabic", "Arab"),
+  Bajau = c("Bajau", "Bajau dialects"),
+  Turkish = c("Turkish"),
+  Kadazan = c("Kadazan", "Kadazan dialects"),
+  Portuguese = c("Portuguese"),
+  Urdu = c("Urdu", "urdu"),
+  Chichewa = c("Chichewa"),
+  Fuzhou = c("Fuzhou", "FuChow", "Foochow", "Fookchou", "fuchao"),
+  Persian = c("Persian/Farsi"),
+  Javanese = c("Javanese", "Jawa"),
+  Bengali = c("Bengali", "Bangla"),
+  Lao = c("Lao"),
+  Vietnamese = c("Vietnamese", "Vietnam"),
+  Russian = c("Russian"),
+  Luganda = c("Luganda"),
+  Tigrinya = c("Tigrinya"),
+  Iban = c("Iban"),
+  Pashto = c("Pashto"),
+  Gujarati = c("Gujarati"),
+  Kashmiri = c("kashmiri"),
+  Danish = c("Danish"),
+  Taiwanese = c("Taiwanese"),
+  Bidayuh = c("bidayuh"),
+  Fuzhou = c("Fuzhou", "FuChow", "Foochow", "Fookchou", "fuchao"),
+  Wenzhou = c("Wenzhoub dialect", "Wenzhou"),
+  Malayalam = c("Malayalam"),
+  Marathi = c("Marathi"),
+  Pashto = c("Pashto"),
+  Sindhi = c("Sindhi"),
+  Sinhala = c("Sinhala", "Sinhalese"),
+  None = c("-", "N/A", "_", ".", "None", "0", "no", "-99", "90", "80", "70", "60", "50", "40","45", "30", "20", "10", "7", "5", "2", "100", "Èñ©ÂçóË™û")
+)
+
+library(dplyr)
+
+# Function to standardize language names
+standardize_language <- function(x) {
+  for (standard_name in names(language_mapping)) {
+    if (tolower(x) %in% tolower(language_mapping[[standard_name]])) {
+      return(standard_name)
+    }
+  }
+  return(x)  # Return original if no match found
+}
+
+# Apply the standardization
+secondLang <- secondLang |> 
+  mutate(SecondLang_type = sapply(SecondLang_type, standardize_language)) |>
+  filter(!is.na(SecondLang_type) & SecondLang_type != "None")|>
+  filter(SecondLang_score >= 50)
+
+# Check the unique values after recoding
+#unique_values <- sort(unique(secondLang$SecondLang_type))
+#print(sort(unique(secondLang$SecondLang_type)))
+
+# Group by participant, count languages, and calculate average score
+participant_summary <- secondLang |>
+  mutate(participant = as.factor(participant)) |>
+  mutate(SecondLang_score = as.numeric(SecondLang_score))|>
+  group_by(participant) |>
+  summarise(
+    num_Seclanguages = n_distinct(SecondLang_type),
+    avg_score = mean(SecondLang_score, na.rm = TRUE)
+  ) |>
+  ungroup()
+
+demo <- demo |>
+  left_join(participant_summary, by = "participant")
+
+```
+
+Function on how to get the unique values in each column
+
+```{r}
+
+# Function to display unique values for each column
+get_unique_values <- function(df) {
+  lapply(df, unique)
+}
+
+# Get unique values for each selected column in demo df
+print(get_unique_values(demo))
+```
+
+## Recode values
+
+```{r}
+## Ethnicity
+
+# Chinese: Chinese, Chinese-Indian, Malay-Chinese
+# Indian: Indian, Indian-Bidayuh, Punjabi, Sri Lankan, Pakistani
+# Malay: Malay, Malay-Indian
+# Indigenous: Iban, Aboriginal (Orang Asli)
+# Other: Any other values not fitting the above categories or left unspecified
+
+demo <- demo %>%
+  mutate(Ethnicity = recode(Ethnicity,
+                            'Chinese' = 'Chinese',
+                            'Chinese-Indian' = 'Chindian',
+                            'Malay-Chinese' = 'Malay',
+                            'Indian' = 'Indian',
+                            'Indian-Bidayuh' = 'Indian',
+                            'Punjabi' = 'Indian',
+                            'Sri Lankan' = 'Indian',
+                            'Pakistani' = 'Indian',
+                            'Malay' = 'Malay',
+                            'Malay-Indian' = 'Malay',
+                            'Iban' = 'Indigenous',
+                            'Aboriginal (Orang Asli)' = 'Indigenous',
+                            'Eurasian' = "Eurasian",
+                            'Japanese' = 'EastAsian',
+                            "Korean" = "EastAsian",
+                            "Filipino" = "SEA",
+                            "Indonesian" = "SEA",
+                            "Mixed-Filipino" = "SEA",
+                            "Pakistan" = "SouthAsia",
+                            "Palestine" = "MidEastern",
+                            "Egyptian" = "MidEastern",
+                            "Arab" = "MidEastern",
+                            "Burmese" = "SEA",
+                            "Caucasian" = "White",
+                            "European" = "White",
+                            .default = 'Other')) 
+
+
+## StudyLevel
+# Levels: Freshman/First Year 
+# Sophomore/Second Year
+# Junior/Third Year 
+# Senior/Fourth Year 
+# Graduate Student 
+
+# Define the desired order of study levels
+study_level_order <- c("Freshman/First Year", "Sophomore/Second Year", 
+                       "Junior/Third Year", "Senior/Fourth Year", "Graduate Student")
+
+# Convert StudyLevel to an ordered factor
+demo <- demo %>%
+  mutate(StudyLevel = factor(StudyLevel, 
+                             levels = study_level_order, 
+                             ordered = TRUE))
+
+## Major
+# Psychology: Psychology, PhD Psychology
+# Education: TESL/TESOL, PhD Education
+# Communication: Communication
+# Management: Management
+# Computer Science/IT: Computer Science, IT/Network Security/Data, Software Engineering, Web Design
+# Biomedical Sciences: Biomedical Science, Medical Biotechnology, Medical biotechnology, Biotechnology, Nutrition
+# Other: Not specified, Undecided
+
+# Define the recoding scheme
+demo <- demo %>%
+  mutate(Major = recode(Major,
+                        'Psychology' = 'Psychology',
+                        'PhD Psychology' = 'Psychology',
+                        'TESL/TESOL' = 'Education',
+                        'PhD Education' = 'Education',
+                        'Communication' = 'Communication',
+                        'Management' = 'Management',
+                        'Computer Science' = 'Computer Science/IT',
+                        'IT/Network Security/Data' = 'Computer Science/IT',
+                        'Software Engineering' = 'Computer Science/IT',
+                        'Web Design' = 'Computer Science/IT',
+                        'Biomedical Science' = 'Biomedical Sciences',
+                        'Medical Biotechnology' = 'Biomedical Sciences',
+                        'Medical biotechnology' = 'Biomedical Sciences',
+                        'Biotechnology' = 'Biomedical Sciences',
+                        'Nutrition' = 'Biomedical Sciences',
+                        "Not specified" = "NA",
+                        .default = 'Other'))
+
+## ParentalEdu
+# Ranking-based, with higher-level provided better support
+# No
+# Yes, mother only
+# Yes, father only
+# Yes, both parents
+
+# Define the desired order of parental education levels
+parental_edu_order <- c("No", "Yes, mother only", "Yes, father only", "Yes, both parents")
+
+# Convert ParentalEdu to an ordered factor
+demo <- demo %>%
+  mutate(ParentalEdu = factor(ParentalEdu, 
+                              levels = parental_edu_order, 
+                              ordered = TRUE))
+
+## Handedness
+# Convert Handedness to a factor
+demo <- demo %>%
+  mutate(Handedness = factor(Handedness, levels = c("Left", "Right", "Undisclosed")))
+
+## PastMedDiagnosis
+# Past medical dignosis; this refers to the neuropsychological disorders too
+# Convert PastMedDiagnosis to a factor
+demo <- demo %>%
+  mutate(PastMedDiagnosis = factor(PastMedDiagnosis, levels = c("No", "Yes", "Undisclosed")))
+
+## NativeLang
+# Chinese: Mandarin/Cantonese/chinese dialects, English & Chinese
+# Malay: Malay, Bahasa Indonesia, Malay & English, Malay & French
+# English: English, English & Iban, English & Myammar, English & German, English & Tamil, English & Arabic
+# Other Asian Languages: Dhivehi, Japanese, Hindi/Bengali/Tamil/Gujarati/Urdu, KOREAN, Korean, Persian/Farsi, Arabic, Maldivian, Vietnam, Burmese, Luganda, Pashto
+# European Languages: German, Portuguese, Russian
+# Creole: Creole
+
+# Define the recoding scheme
+demo <- demo %>%
+  mutate(NativeLang = recode(NativeLang,
+                             'Mandarin/Cantonese/chinese dialects' = 'Chinese',
+                             'English & Chinese' = 'Chinese',
+                             'Malay' = 'Malay',
+                             'Bahasa Indonesia' = 'Malay',
+                             'Malay & English' = 'Malay',
+                             'Malay & French' = 'Malay',
+                             'English' = 'English',
+                             'English & Iban' = 'English',
+                             'English & Myammar' = 'English',
+                             'English & German' = 'English',
+                             'English & Tamil' = 'English',
+                             'English & Arabic' = 'English',
+                             'Hindi/Bengali/Tamil/Gujarati/Urdu' = 'Msia Indian Languages',
+                             'Dhivehi' = 'Other Asian Languages',
+                             'Japanese' = 'Other Asian Languages',
+                             'KOREAN' = 'Other Asian Languages',
+                             'Korean' = 'Other Asian Languages',
+                             'Vietnam' = 'Other Asian Languages',
+                             'Burmese' = 'Other Asian Languages',
+                             'Luganda' = 'Other Asian Languages',
+                             'Arabic' = 'Middle Eastern Languages',  
+                             'Persian/Farsi' = 'Middle Eastern Languages',  
+                             'Pashto' = 'Middle Eastern Languages',  
+                             'German' = 'European Languages',
+                             'Portuguese' = 'European Languages',
+                             'Russian' = 'European Languages',
+                             'Creole' = 'Creole',
+                             .default = 'Other'))
+
+## SecondLang
+# Convert SecondLang to a factor with specified levels
+demo <- demo %>%
+  mutate(SecondLang = factor(SecondLang, levels = c("Unspecified", "No", "Yes")))
+
+## MathLang_Primary
+# Chinese: Mandarin Chinese/Cantonese, English & Chinese, Malay/English/Chinese
+# English: English, 
+# Tamil: Tamil
+# Malay: Malay, Malay & English, Malay/English/Chinese
+# Other Asian Languages: Japanese, Indonesian, Vietnamese, Burmese, Korean, Sinhala, Japanese/English, Korean and English, Indonesian/English
+# European Languages: French/English, French/English
+# Creole: Creole, Seychelles creole, Creole/English
+# Arabic: Arabic
+# Unspecified: Unspecified
+
+# Define the recoding scheme
+demo <- demo %>%
+  mutate(MathLang_Primary = recode(MathLang_Primary,
+                                   'Mandarin Chinese/ Cantonese' = 'Chinese',
+                                   'English & Chinese' = 'Chinese',
+                                   'Malay/English/Chinese' = 'Chinese',
+                                   'English' = 'English',
+                                   'Japanese/English' = 'Other Asian Languages',
+                                   'Korean and English' = 'Other Asian Languages',
+                                   'French/English' = 'European Languageh',
+                                   'Indonesian/English' = 'Other Asian Languagesh',
+                                   'Tamil' = 'Tamil',
+                                   'Malay' = 'Malay',
+                                   'Malay & English' = 'Malay',
+                                   'Japanese' = 'Other Asian Languages',
+                                   'Indonesian' = 'Other Asian Languages',
+                                   'Vietnamese' = 'Other Asian Languages',
+                                   'Burmese' = 'Other Asian Languages',
+                                   'Korean' = 'Other Asian Languages',
+                                   'Sinhala' = 'Other Asian Languages',
+                                   'French/English' = 'European Languages',
+                                   'Creole/English' = 'Creole',
+                                   'Creole' = 'Creole',
+                                   'Seychelles creole' = 'Creole',
+                                   'Arabic' = 'Arabic',
+                                   'Unspecified' = 'Unspecified',
+                                   .default = 'Other'))
+
+
+
+
+## MultLang
+# Chinese: Includes 'Chinese' and 'English & Chinese'.
+# English: Includes 'English'.
+# Malay: Includes 'Malay' and 'Malay & English'.
+# Other Asian Languages: Includes languages such as 'Japanese', 'Korean', 'Vietnam', 'Burmese', 'Indonesian', 'Indonesian/English', 'Sinhala', 'korean'.
+# European Languages: Includes 'German' and 'French'.
+# Creole: Includes 'Creole', 'Creole and English', and 'Creole/English'.
+# Arabic: Includes 'Arabic'.
+# Tamil: Includes 'Tamil'.
+# Unspecified: Includes 'Unspecified'.
+# Other: Default category for any other languages not explicitly listed.
+
+demo <- demo %>%
+  mutate(MultLang = recode(MultLang,
+                                   'Chinese' = 'Chinese',
+                                   'English' = 'English',
+                                   'Malay & English' = 'Malay',
+                                   'Malay' = 'Malay',
+                                   'Indonesian' = 'Other Asian Languages',
+                                   'Creole' = 'Creole',
+                                   'Creole and English' = 'Creole',
+                                   'English & Chinese' = 'Chinese',
+                                   'Unspecified' = 'Unspecified',
+                                   'German' = 'European Languages',
+                                   'Japanese' = 'Other Asian Languages',
+                                   'Korean' = 'Other Asian Languages',
+                                   'Vietnam' = 'Other Asian Languages',
+                                   'Burmese' = 'Other Asian Languages',
+                                   'Arabic' = 'Arabic',
+                                   'Tamil' = 'Tamil',
+                                   'Creole/English' = 'Creole',
+                                   'French' = 'European Languages',
+                                   'Indonesian/English' = 'Other Asian Languages',
+                                   'Sinhala' = 'Other Asian Languages',
+                                   'korean' = 'Other Asian Languages',
+                                   .default = 'Other'))
+
+## SchoolType_Primary
+# Vernacular: Includes 'Chinese vernacular school' and 'Vernacular school (Tamil)'.
+# Public: Includes 'Public school (SK)' and 'Public School'.
+# Private: Includes 'Private (International) School', 'Private School', 'Private school', 'Private (Local) School', and 'private school'.
+# School system in Malaysia are complicated. 
+
+demo <- demo %>%
+  mutate(SchoolType_Primary = recode(SchoolType_Primary,
+                                            'Chinese vernacular school' = 'Vernacular',
+                                            'Public school (SK)' = 'Public',
+                                            'Private (International) School' = 'Private',
+                                            'Private School' = 'Private',
+                                            'Private school' = 'Private',
+                                            'Oversea (UK public school)' = 'Overseas',
+                                            'Unspecified' = 'Unspecified',
+                                            'Private (Local) School' = 'Private',
+                                            'Oversea (Qatar Private school)' = 'Overseas',
+                                            'Public School' = 'Public',
+                                            'Homeschooling' = 'Homeschooling',
+                                            'Oversea (UK private school)' = 'Overseas',
+                                            'Oversea (China public school)' = 'Overseas',
+                                            'Oversea (Tanzania public school)' = 'Overseas',
+                                            'Religious school' = 'Religious',
+                                            'Religious School' = 'Religious',
+                                            'Oversea (Japan international school)' = 'Overseas',
+                                            'Oversea (India public school)' = 'Overseas',
+                                            'Vernacular school (Tamil)' = 'Vernacular',
+                                            'Oversea (Seychelles school)' = 'Overseas',
+                                            'Oversea (Japan public school)' = 'Overseas',
+                                            'private school' = 'Private',
+                                            'English' = 'Other',
+                                            'Oversea (Singapore public school)' = 'Overseas',
+                                            'Oversea (Korea public school)' = 'Overseas',
+                                            'Native' = 'Other',
+                                            'Oversea (Arab school)' = 'Overseas',
+                                            .default = 'Other'))
+
+
+demo <- demo %>%
+  # Recode and rank MathDiff as a factor with specified levels
+  mutate(MathDiff = factor(MathDiff, levels = c("Undisclosed", "No", "Yes")),
+         
+         # Recode and rank MultLearning_normal as a factor with specified levels
+         MultLearning_normal = factor(MultLearning_normal, levels = c("Undisclosed", "No", "Yes")),
+         
+         # Recode and rank MultLearning_time as a factor with specified levels
+         MultLearning_time = factor(MultLearning_time, levels = c("Undisclosed", "No", "Yes")),
+         
+         # Recode and rank MultLearning_peers as a factor with specified levels
+         MultLearning_peers = factor(MultLearning_peers, levels = c("Undisclosed", "No", "Yes")),
+         
+         # Recode MultLearning_score as an ordered factor
+         MultLearning_score = factor(MultLearning_score, levels = 1:10, ordered = TRUE),
+         
+         # Recode and rank ReadingProblem as a factor with specified levels
+         ReadingProblem = factor(ReadingProblem, levels = c("Unspecified", "No", "Yes")),
+         
+         # Recode and rank MathAnxiety as a factor with specified levels
+         MathAnxiety = factor(MathAnxiety, levels = c("Unspecified", "No", "Yes")),
+         
+         # Recode and rank ExamAnxiety as a factor with specified levels
+         ExamAnxiety = factor(ExamAnxiety, levels = c("Unspecified", "No", "Yes")),
+         
+         # Recode and rank MemoryAnxiety as a factor with specified levels
+         MemoryAnxiety = factor(MemoryAnxiety, levels = c("Unspecified", "No", "Yes")))
+
+
+```
+
+### School Systems in Malaysia
+
+#### Vernacular Schools
+
+Vernacular schools in Malaysia cater to specific ethnic groups and offer instruction primarily in their native languages. The main types of vernacular schools are:
+
+1.  **Chinese Vernacular Schools**: These schools use Mandarin Chinese as the medium of instruction and emphasize Chinese culture and language.
+
+2.  **Tamil Vernacular Schools**: These schools use Tamil as the medium of instruction and focus on the Tamil language and cultural education.
+
+    **Funding**: Vernacular schools receive government funding but also rely on community support and private donations. The level of funding can vary, often influenced by the community's socioeconomic status.
+
+#### Public Schools (Sekolah Kebangsaan - SK)
+
+Public schools in Malaysia, known as Sekolah Kebangsaan (SK), use Malay (Bahasa Malaysia) and English as the medium of instruction. They follow the national curriculum set by the Malaysian Ministry of Education and provide a standardized education for all students, emphasizing the national language and culture.
+
+**Funding**: Fully funded by the Malaysian government, public schools provide free education to all Malaysian citizens. The funding covers infrastructure, teacher salaries, and educational resources.
+
+#### International Schools
+
+International schools in Malaysia offer a diverse curriculum based on foreign education systems, such as the British, American, or International Baccalaureate (IB). These schools primarily use English as the medium of instruction and cater to expatriates and locals seeking an international education. They often provide a multicultural environment with a global perspective on education.
+
+**Funding**: Funded through tuition fees paid by students' families. These schools often have substantial financial resources, which come from high tuition fees, donations, and sponsorships.
+
+**Academic Excellence**: Recent observations and studies suggest that students from vernacular schools, particularly Chinese vernacular schools, tend to excel academically. This trend is attributed to several factors:
+
+-   **Cultural Emphasis on Education**: Chinese communities often place a high value on education, leading to strong parental support and a focus on academic achievement.
+
+-   **Rigorous Curriculum**: Vernacular schools, especially Chinese ones, are known for their rigorous academic standards and challenging curriculum, which can foster higher academic performance.
+
+-   **Additional Resources**: These schools often benefit from community support and private funding, providing additional educational resources, better facilities, and extracurricular opportunities.
+
+## Create new columns
+
+To determine if the languages used for learning math in primary school (MathLang_Primary) and the native language (NativeLang) are the same, we created a new variable indicating whether these languages match.
+
+We also matched if languages used for learning multiplication table (MultLang) and the native language (NativeLang) are the same. This new variable can then be used to analyze the impact of using a non-native language on learning multiplication.
+
+```{r}
+
+demo <- demo %>%
+  mutate(SameLang_pri = ifelse(as.character(MathLang_Primary) == as.character(NativeLang), "Same", "Different")) %>%
+  mutate(SameLang_pri = factor(SameLang_pri, levels = c("Same", "Different")))
+
+demo <- demo %>%
+  mutate(SameLang_Mult = ifelse(as.character(MultLang) == as.character(NativeLang), "Same", "Different")) %>%
+  mutate(SameLang_Mult = factor(SameLang_Mult, levels = c("Same", "Different")))
+```
+
+## Combined data files
+
+```{r}
+
+# Import fluency data
+fluency <- read_excel("00_RawData/fluency_score.xlsx")|>
+  dplyr::select("participant", "fluency_score") |>
+  mutate(
+    participant = as.factor(participant),
+    fluency_score = as.numeric(fluency_score)
+  )
+
+combined <- left_join(fluency, demo, by = "participant") |>
+  write_csv("01_CleanedData/03_combinedData_Final.csv") |>
+  dplyr::filter(Nationality == 'Malaysian') |>
+  write_csv("01_CleanedData/04_combined-and-filtered_Data_Final.csv")
+```
+
+## 
